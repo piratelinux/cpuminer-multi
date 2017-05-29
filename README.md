@@ -64,6 +64,7 @@ Algorithms
  * ✓ __x17__ (Verge [XVG])
  * ✓ __yescrypt__ (GlobalBoostY [BSTY], Unitus [UIS], MyriadCoin [MYR])
  * ✓ __zr5__ (Ziftrcoin [ZRC])
+ * ✓ __ar2__ (Bitmark [BTM])
 
 #### Implemented, but untested
  * ? hefty1 (Heavycoin)

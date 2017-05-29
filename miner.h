@@ -250,6 +250,7 @@ int scanhash_x17(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *ha
 int scanhash_xevan(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_yescrypt(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_zr5(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
+int scanhash_ar2(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 
 /* api related */
 void *api_thread(void *userdata);
@@ -533,6 +534,7 @@ void x14hash(void *output, const void *input);
 void x15hash(void *output, const void *input);
 void x17hash(void *output, const void *input);
 void zr5hash(void *output, const void *input);
+void ar2hash(void *ouput, const void *input);
 void yescrypthash(void *output, const void *input);
 void zr5hash_pok(void *output, uint32_t *pdata);
 

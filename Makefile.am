@@ -42,7 +42,6 @@ cpuminer_SOURCES = \
   sha3/sph_whirlpool.c \
   sha3/gost_streebog.c \
   crypto/blake2s.c \
-  crypto/blake2b.c \
   crypto/oaes_lib.c \
   crypto/c_keccak.c \
   crypto/c_groestl.c \
@@ -54,6 +53,12 @@ cpuminer_SOURCES = \
   lyra2/Lyra2.c lyra2/Sponge.c \
   yescrypt/yescrypt-common.c yescrypt/yescrypt-best.c \
   yescrypt/sha256_Y.c \
+  ar2/argon2.c \
+  ar2/core.c \
+  ar2/blake2/blake2b.c \
+  ar2/thread.c \
+  ar2/encoding.c \
+  ar2/opt.c \
   algo/axiom.c \
   algo/bastion.c \
   algo/blake.c \
@@ -101,7 +106,8 @@ cpuminer_SOURCES = \
   algo/x17.c \
   algo/xevan.c \
   algo/yescrypt.c \
-  algo/zr5.c
+  algo/zr5.c \
+  algo/ar2.c
 
 disable_flags =
 
