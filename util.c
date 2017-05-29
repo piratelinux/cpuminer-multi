@@ -2458,6 +2458,9 @@ void print_hash_tests(void)
 	memset(buf, 0, sizeof(buf));
 	printpfx("zr5", hash);
 
+	ar2hash(&hash[0], &buf[0]);
+	printpfx("ar2", hash);
+
 	printf("\n");
 
 	free(scratchbuf);
