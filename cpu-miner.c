@@ -746,7 +746,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 				version_reduce = true;
 		}
 	}
-
+	
 	tmp = json_object_get(val, "height");
 	if (!tmp || !json_is_integer(tmp)) {
 		applog(LOG_ERR, "JSON invalid height");
@@ -909,7 +909,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 	work->txs = (char*) malloc(2 * (n + cbtx_size + tx_size) + 1);
 	bin2hex(work->txs, txc_vi, n);
 	bin2hex(work->txs + 2*n, cbtx, cbtx_size);
-
+	
 	/* generate merkle root */
 	merkle_tree = (uchar(*)[32]) calloc(((1 + tx_count + 1) & ~1), 32);
 	sha256d(merkle_tree[0], cbtx, cbtx_size);
@@ -924,8 +924,9 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 			goto out;
 		}
 		sha256d(merkle_tree[1 + i], tx, tx_size);
-		if (!submit_coinbase)
+		if (!submit_coinbase) {
 			strcat(work->txs, tx_hex);
+		}
 	}
 	n = 1 + tx_count;
 	while (n > 1) {
@@ -940,6 +941,8 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 
 	/* assemble block header */
 	work->data[0] = swab32(version);
+	//work->data[0] = version;
+	
 	for (i = 0; i < 8; i++)
 		work->data[8 - i] = le32dec(prevhash + i);
 	for (i = 0; i < 8; i++)
@@ -1093,7 +1096,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				cryptolight_hash(hash, work->data, 76);
 				break;
 			case ALGO_CRYPTONIGHT:
-				cryptonight_hash(hash, work->data, 76);
+				cryptonight_hash(hash, work->data, 80);
 			default:
 				break;
 			}
@@ -1157,13 +1160,14 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		}
 
 	} else if (work->txs) { /* gbt */
-
+	  
 		char data_str[2 * sizeof(work->data) + 1];
 		char *req;
 
 		for (i = 0; i < ARRAY_SIZE(work->data); i++)
 			be32enc(work->data + i, work->data[i]);
 		bin2hex(data_str, (unsigned char *)work->data, 80);
+		
 		if (work->workid) {
 			char *params;
 			val = json_object();
@@ -1227,7 +1231,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				cryptolight_hash(hash, work->data, 76);
 				break;
 			case ALGO_CRYPTONIGHT:
-				cryptonight_hash(hash, work->data, 76);
+				cryptonight_hash(hash, work->data, 80);
 			default:
 				break;
 			}
@@ -1248,8 +1252,9 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			res = json_object_get(val, "result");
 			json_t *status = json_object_get(res, "status");
 			bool valid = !strcmp(status ? json_string_value(status) : "", "OK");
-			if (valid)
+			if (valid) {
 				share_result(valid, work, NULL);
+			}
 			else {
 				json_t *err = json_object_get(res, "error");
 				const char *sreason = json_string_value(json_object_get(err, "message"));
@@ -2204,8 +2209,8 @@ static void *miner_thread(void *userdata)
 			rc = scanhash_cryptolight(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_CRYPTONIGHT:
-			rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done);
-			break;
+		  rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done);
+		  break;
 		case ALGO_DECRED:
 			rc = scanhash_decred(thr_id, &work, max_nonce, &hashes_done);
 			break;
@@ -3346,8 +3351,8 @@ int main(int argc, char *argv[]) {
 	if (opt_algo == ALGO_QUARK) {
 		init_quarkhash_contexts();
 	} else if(opt_algo == ALGO_CRYPTONIGHT || opt_algo == ALGO_CRYPTOLIGHT) {
-		jsonrpc_2 = true;
-		opt_extranonce = false;
+	  //jsonrpc_2 = true;
+	  opt_extranonce = false;
 		aes_ni_supported = has_aes_ni();
 		if (!opt_quiet) {
 			applog(LOG_INFO, "Using JSON-RPC 2.0");
