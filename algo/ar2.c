@@ -9,7 +9,7 @@
 
 void ar2hash(void *output, const void *input)
 {
-  int ret = argon2d_hash_raw(2,16,1,input,80,input,80,output,32);
+  int ret = argon2d_hash_raw(1,4096,1,input,80,input,80,output,32);
 }
 
 int scanhash_ar2(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
