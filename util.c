@@ -892,10 +892,8 @@ bool fulltest(const uint32_t *hash, const uint32_t *target)
 			rc = false;
 			break;
 		}
-		printf("fulltest hash[%d] <= target[%d]\n",i,i);
 		if (hash[i] < target[i]) {
 			rc = true;
-			printf("fulltest hash[%d]<target[%d]\n",i,i);
 			break;
 		}
 	}

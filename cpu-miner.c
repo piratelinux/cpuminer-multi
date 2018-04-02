@@ -767,9 +767,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		goto out;
 	}
 	version = (uint32_t) json_integer_value(tmp);
-	printf("version is %u\n",version);
 	if ((version & 0xffU) > BLOCK_VERSION_CURRENT) {
-	  printf("version too big compared to %u\n",BLOCK_VERSION_CURRENT);
 		if (version_reduce) {
 			version = (version & ~0xffU) | BLOCK_VERSION_CURRENT;
 		} else if (have_gbt && allow_getwork && !version_force) {
@@ -799,8 +797,6 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		goto out;
 	}
 
-	printf("find and count\n");
-	
 	/* find count and size of transactions */
 	txa = json_object_get(val, "transactions");
 	if (!txa || !json_is_array(txa)) {
@@ -951,8 +947,6 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 
 	/* assemble block header */
 	work->data[0] = swab32(version);
-	printf("swab32 version is %u\n",work->data[0]);
-	//work->data[0] = version;
 	
 	for (i = 0; i < 8; i++)
 		work->data[8 - i] = le32dec(prevhash + i);
@@ -961,17 +955,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 	if (opt_algo == ALGO_EQUIHASH) {
 	  for (i = 0; i < 8; i++)
 	    work->data[17 + i] = 0;
-	  printf("time = ");
-	  for (int i=0; i<4; i++) {
-	    printf("%02x",((unsigned char *)&curtime)[i]);
-	  }
-	  printf("\n");
 	  uint32_t curtime_s = swab32(curtime);
-	  printf("time s = ");
-	  for (int i=0; i<4; i++) {
-	    printf("%02x",((unsigned char *)&curtime_s)[i]);
-	  }
-	  printf("\n");
 	  work->data[25] = swab32(curtime);
 	  work->data[26] = le32dec(&bits);
 	  for (i=0;i<8;i++)
@@ -993,13 +977,6 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		applog(LOG_ERR, "JSON invalid target");
 		goto out;
 	}
-	printf("target: ");
-	for (i=0;i<8;i++) {
-	  for (int j=0;j<4;j++) {
-	    printf("%02x",((unsigned char *)&target)[4*i+j]);
-	  }
-	}
-	printf("\n");
 	
 	for (i = 0; i < ARRAY_SIZE(work->target); i++)
 		work->target[7 - i] = be32dec(target + i);
@@ -1212,7 +1189,6 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		int header_len = 80;
 		if (opt_algo == ALGO_EQUIHASH) header_len = 1487;
 		bin2hex(data_str, (unsigned char *)work->data, header_len);
-		printf("data_str = %s\n",data_str);
 		
 		if (work->workid) {
 			char *params;

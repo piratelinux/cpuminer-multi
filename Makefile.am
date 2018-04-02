@@ -5,8 +5,6 @@ else
 JANSSON_INCLUDES=
 endif
 
-#CXX = g++ -fPIC -std=c++11
-
 EXTRA_DIST	= example-cfg.json nomacro.pl
 
 SUBDIRS		= compat

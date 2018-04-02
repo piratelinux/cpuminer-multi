@@ -13,10 +13,6 @@
 #include <string.h>
 #include <inttypes.h>
 
-//#include "equi_miner.h"
-//#include "equihash.h"
-#include <openssl/sha.h>
-
 #if defined(USE_ASM) && defined(__arm__) && defined(__APCS_32__)
 #define EXTERN_SHA256
 #endif
