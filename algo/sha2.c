@@ -667,10 +667,13 @@ int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_
 	    full_data[27*4+j] = *((unsigned char *)endiandata+27*4+j);
 	  }
 	  cmd[11+27*8+2*4] = 48;
-	  printf("cmd = %s\n",cmd);
+	  //printf("cmd = %s\n",cmd);
 	  FILE* equihash = popen(cmd, "r");
 	  char buf[10000];
 	  while (fgets(buf, sizeof(buf), equihash) != 0) {
+	    for (int i=0; i<1347; i++) {
+	      sscanf(buf+2*i,"%2hhx",full_data+140+i);
+	    }
 	    sha256d((unsigned char *)hash,full_data,1487);
 	    if (fulltest(hash, ptarget)) {
 	      full_data[1487]=0;
