@@ -384,7 +384,7 @@ void cpu_getmodelid(char *outbuf, size_t maxsz);
 float cpu_temp(int core);
 
 struct work {
-	uint32_t data[48];
+	uint32_t data[372];
 	uint32_t target[8];
 
 	double targetdiff;

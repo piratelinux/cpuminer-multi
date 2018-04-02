@@ -13,6 +13,10 @@
 #include <string.h>
 #include <inttypes.h>
 
+//#include "equi_miner.h"
+//#include "equihash.h"
+#include <openssl/sha.h>
+
 #if defined(USE_ASM) && defined(__arm__) && defined(__APCS_32__)
 #define EXTERN_SHA256
 #endif
@@ -631,5 +635,61 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	
 	*hashes_done = n - first_nonce + 1;
 	pdata[19] = n;
+	return 0;
+}
+
+int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
+{
+	uint32_t _ALIGN(128) data[64];
+	uint32_t _ALIGN(32) hash[8];
+	uint32_t _ALIGN(32) hashtr[8];
+	uint32_t _ALIGN(32) midstate[8];
+	uint32_t _ALIGN(32) prehash[8];
+	uint32_t *pdata = work->data;
+	uint32_t *ptarget = work->target;
+	uint32_t * ptargettr = malloc(8*sizeof(uint32_t));
+	const uint32_t first_nonce = pdata[27];
+	const uint32_t Htarg = ptarget[7];
+	uint32_t n = pdata[27] - 1;
+	uint32_t _ALIGN(128) endiandata[35];
+
+	unsigned char full_data[1488];
+	unsigned char cmd[292];
+	sprintf(cmd,"equisolver ");
+	for (int i=0; i<35; i++) {
+	  be32enc(&endiandata[i], pdata[i]);
+	  for (int j=0; j<4; j++) {
+	    sprintf(cmd+11+i*8+2*j,"%02x",*((unsigned char *)endiandata+i*4+j));
+	    full_data[i*4+j] = *((unsigned char *)endiandata+i*4+j);
+	  }
+	}
+	do {
+	  pdata[27] = ++n;
+	  be32enc(&endiandata[27], pdata[27]);
+	  for (int j=0; j<4; j++) {
+	    sprintf(cmd+11+27*8+2*j,"%02x",*((unsigned char *)endiandata+27*4+j));
+	    full_data[27*4+j] = *((unsigned char *)endiandata+27*4+j);
+	  }
+	  cmd[11+27*8+2*4] = 48;
+	  printf("cmd = %s\n",cmd);
+	  FILE* equihash = popen(cmd, "r");
+	  char buf[10000];
+	  while (fgets(buf, sizeof(buf), equihash) != 0) {
+	    sha256d((unsigned char *)hash,full_data,1487);
+	    if (fulltest(hash, ptarget)) {
+	      full_data[1487]=0;
+	      for (int i=35; i<372; i++) {
+		pdata[i] = swab32(((uint32_t *)full_data)[i]);
+	      }
+	      work_set_target_ratio(work, hash);
+	      *hashes_done = n - first_nonce + 1;
+	      return 1;
+	    }
+	  }
+	  pclose(equihash);	
+	} while (likely(n < max_nonce && !work_restart[thr_id].restart));
+	
+	*hashes_done = n - first_nonce + 1;
+	pdata[27] = n;
 	return 0;
 }

@@ -128,6 +128,7 @@ enum algos {
 	ALGO_YESCRYPT,
 	ALGO_ZR5,
 	ALGO_AR2,
+	ALGO_EQUIHASH,
 	ALGO_COUNT
 };
 
@@ -183,6 +184,7 @@ static const char *algo_names[] = {
 	"yescrypt",
 	"zr5",
 	"ar2",
+	"equihash",
 	"\0"
 };
 
@@ -337,6 +339,7 @@ Options:\n\
                           yescrypt     Yescrypt\n\
                           zr5          ZR5\n\
                           ar2          AR2\n\
+                          equihash     EQUIHASH\n\
   -o, --url=URL         URL of mining server\n\
   -O, --userpass=U:P    username:password pair for mining server\n\
   -u, --user=USERNAME   username for mining server\n\
@@ -764,7 +767,9 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		goto out;
 	}
 	version = (uint32_t) json_integer_value(tmp);
+	printf("version is %u\n",version);
 	if ((version & 0xffU) > BLOCK_VERSION_CURRENT) {
+	  printf("version too big compared to %u\n",BLOCK_VERSION_CURRENT);
 		if (version_reduce) {
 			version = (version & ~0xffU) | BLOCK_VERSION_CURRENT;
 		} else if (have_gbt && allow_getwork && !version_force) {
@@ -794,6 +799,8 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		goto out;
 	}
 
+	printf("find and count\n");
+	
 	/* find count and size of transactions */
 	txa = json_object_get(val, "transactions");
 	if (!txa || !json_is_array(txa)) {
@@ -944,23 +951,56 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 
 	/* assemble block header */
 	work->data[0] = swab32(version);
+	printf("swab32 version is %u\n",work->data[0]);
 	//work->data[0] = version;
 	
 	for (i = 0; i < 8; i++)
 		work->data[8 - i] = le32dec(prevhash + i);
 	for (i = 0; i < 8; i++)
 		work->data[9 + i] = be32dec((uint32_t *)merkle_tree[0] + i);
-	work->data[17] = swab32(curtime);
-	work->data[18] = le32dec(&bits);
-	memset(work->data + 19, 0x00, 52);
+	if (opt_algo == ALGO_EQUIHASH) {
+	  for (i = 0; i < 8; i++)
+	    work->data[17 + i] = 0;
+	  printf("time = ");
+	  for (int i=0; i<4; i++) {
+	    printf("%02x",((unsigned char *)&curtime)[i]);
+	  }
+	  printf("\n");
+	  uint32_t curtime_s = swab32(curtime);
+	  printf("time s = ");
+	  for (int i=0; i<4; i++) {
+	    printf("%02x",((unsigned char *)&curtime_s)[i]);
+	  }
+	  printf("\n");
+	  work->data[25] = swab32(curtime);
+	  work->data[26] = le32dec(&bits);
+	  for (i=0;i<8;i++)
+	    work->data[27+i] = 0;
+	  /*memset(work->data+35,0x00,48);
+	  work->data[35] = 0x80000000;
+	  work->data[46] = 0x00000280;*/
+	}
+	else {
+	  work->data[17] = swab32(curtime);
+	  work->data[18] = le32dec(&bits);
+	  memset(work->data + 19, 0x00, 52);
 
-	work->data[20] = 0x80000000;
-	work->data[31] = 0x00000280;
+	  work->data[20] = 0x80000000;
+	  work->data[31] = 0x00000280;
+	}
 
 	if (unlikely(!jobj_binary(val, "target", target, sizeof(target)))) {
 		applog(LOG_ERR, "JSON invalid target");
 		goto out;
 	}
+	printf("target: ");
+	for (i=0;i<8;i++) {
+	  for (int j=0;j<4;j++) {
+	    printf("%02x",((unsigned char *)&target)[4*i+j]);
+	  }
+	}
+	printf("\n");
+	
 	for (i = 0; i < ARRAY_SIZE(work->target); i++)
 		work->target[7 - i] = be32dec(target + i);
 
@@ -1169,7 +1209,10 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 		for (i = 0; i < ARRAY_SIZE(work->data); i++)
 			be32enc(work->data + i, work->data[i]);
-		bin2hex(data_str, (unsigned char *)work->data, 80);
+		int header_len = 80;
+		if (opt_algo == ALGO_EQUIHASH) header_len = 1487;
+		bin2hex(data_str, (unsigned char *)work->data, header_len);
+		printf("data_str = %s\n",data_str);
 		
 		if (work->workid) {
 			char *params;
@@ -1177,13 +1220,13 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			json_object_set_new(val, "workid", json_string(work->workid));
 			params = json_dumps(val, 0);
 			json_decref(val);
-			req = (char*) malloc(128 + 2 * 80 + strlen(work->txs) + strlen(params));
+			req = (char*) malloc(128 + 2 * header_len + strlen(work->txs) + strlen(params));
 			sprintf(req,
 				"{\"method\": \"submitblock\", \"params\": [\"%s%s\", %s], \"id\":4}\r\n",
 				data_str, work->txs, params);
 			free(params);
 		} else {
-			req = (char*) malloc(128 + 2 * 80 + strlen(work->txs));
+			req = (char*) malloc(128 + 2 * header_len + strlen(work->txs));
 			sprintf(req,
 				"{\"method\": \"submitblock\", \"params\": [\"%s%s\"], \"id\":4}\r\n",
 				data_str, work->txs);
@@ -2338,6 +2381,9 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_AR2:
 		  rc = scanhash_ar2(thr_id, &work, max_nonce, &hashes_done);
+		  break;
+		case ALGO_EQUIHASH:
+		  rc = scanhash_equihash(thr_id, &work, max_nonce, &hashes_done);
 		  break;
 		default:
 			/* should never happen */

@@ -17,6 +17,8 @@ AC_PROG_GCC_TRADITIONAL
 AM_PROG_CC_C_O
 AM_PROG_AS
 AC_PROG_RANLIB
+
+AC_LANG(C++)
 AC_PROG_CXX
 
 dnl Checks for header files
