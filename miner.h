@@ -498,7 +498,6 @@ void blake2b_hash(void *output, const void *input);
 void bmwhash(void *output, const void *input);
 void c11hash(void *output, const void *input);
 void cryptolight_hash(void* output, const void* input, int len);
-void cryptonight_hash(void* output, const void* input, int len);
 void decred_hash(void *output, const void *input);
 void droplp_hash(void *output, const void *input);
 void groestlhash(void *output, const void *input);
