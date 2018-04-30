@@ -732,7 +732,7 @@ int varint_encode(unsigned char *p, uint64_t n)
 
 static const char b58digits[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-static bool b58dec(unsigned char *bin, size_t binsz, const char *b58)
+ static bool b58dec(unsigned char *bin, size_t binsz, const char *b58, const int addrver_extra)
 {
 	size_t i, j;
 	uint64_t t;
@@ -755,8 +755,13 @@ static bool b58dec(unsigned char *bin, size_t binsz, const char *b58)
 			c = t >> 32;
 			outi[j] = t & 0xffffffff;
 		}
-		if (c || outi[0] & remmask)
-			goto out;
+		if (c || outi[0] & remmask) {
+		  printf("i=%lu c or remmask\n",i);
+		  if (i<b58sz-addrver_extra) {
+		    printf("i < %lu + %d\n",b58sz,addrver_extra);
+		    goto out;
+		  }
+		}
 	}
 
 	j = 0;
@@ -788,8 +793,10 @@ static int b58check(unsigned char *bin, size_t binsz, const char *b58)
 	int i;
 
 	sha256d(buf, bin, (int) (binsz - 4));
-	if (memcmp(&bin[binsz - 4], buf, 4))
+	if (memcmp(&bin[binsz - 4], buf, 4)) {
+	  printf("bad hash check\n");
 		return -1;
+	}
 
 	/* Check number of zeros is correct AFTER verifying checksum
 	 * (to avoid possibility of accessing the string beyond the end) */
@@ -821,17 +828,21 @@ bool jobj_binary(const json_t *obj, const char *key, void *buf, size_t buflen)
 	return true;
 }
 
-size_t address_to_script(unsigned char *out, size_t outsz, const char *addr)
+ size_t address_to_script(unsigned char *out, size_t outsz, const char *addr, const int addrver_extra)
 {
 	unsigned char addrbin[25];
 	int addrver;
 	size_t rv;
 
-	if (!b58dec(addrbin, sizeof(addrbin), addr))
+	if (!b58dec(addrbin, sizeof(addrbin), addr,addrver_extra)) {
+	  printf("bad b58 decode\n");
 		return 0;
-	addrver = b58check(addrbin, sizeof(addrbin), addr);
-	if (addrver < 0)
+	}
+	addrver = b58check(addrbin+addrver_extra, sizeof(addrbin)-addrver_extra, addr);
+	if (addrver < 0) {
+	  printf("bad addrver\n");
 		return 0;
+	}
 	switch (addrver) {
 		case 5:    /* Bitcoin script hash */
 		case 196:  /* Testnet script hash */
@@ -848,7 +859,7 @@ size_t address_to_script(unsigned char *out, size_t outsz, const char *addr)
 			out[ 0] = 0x76;  /* OP_DUP */
 			out[ 1] = 0xa9;  /* OP_HASH160 */
 			out[ 2] = 0x14;  /* push 20 bytes */
-			memcpy(&out[3], &addrbin[1], 20);
+			memcpy(&out[3], &addrbin[1+addrver_extra], 20);
 			out[23] = 0x88;  /* OP_EQUALVERIFY */
 			out[24] = 0xac;  /* OP_CHECKSIG */
 			return rv;
@@ -2472,3 +2483,13 @@ void print_hash_tests(void)
 	free(scratchbuf);
 }
 
+ uint16_t log2_ceil(uint32_t n) {
+   if (n==0) return 0;
+   uint16_t logValue = 0;
+   while (n) {
+     logValue++;
+     n >>= 1;
+   }
+   return logValue;
+ }
+ 

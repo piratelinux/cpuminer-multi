@@ -634,7 +634,7 @@ int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	return 0;
 }
 
-int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
+int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, uint32_t * target, uint32_t * best_hash)
 {
 	uint32_t _ALIGN(128) data[64];
 	uint32_t _ALIGN(32) hash[8];
@@ -643,11 +643,23 @@ int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_
 	uint32_t _ALIGN(32) prehash[8];
 	uint32_t *pdata = work->data;
 	uint32_t *ptarget = work->target;
+	if (target && fulltest(ptarget,target)) {
+	  printf("use aux target since easier\n");
+	  ptarget = target;
+	}
 	uint32_t * ptargettr = malloc(8*sizeof(uint32_t));
 	const uint32_t first_nonce = pdata[27];
 	const uint32_t Htarg = ptarget[7];
 	uint32_t n = pdata[27] - 1;
 	uint32_t _ALIGN(128) endiandata[35];
+
+	printf("target: ");
+	//((unsigned char *)ptarget)[30] = 0xff;
+	//((unsigned char *)ptarget)[31] = 0xf0;
+	for (int i=0; i<32; i++) {
+	  printf("%02x",((unsigned char *)ptarget)[i]);
+	}
+	printf("\n");
 
 	unsigned char full_data[1488];
 	unsigned char cmd[292];
@@ -675,13 +687,26 @@ int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_
 	      sscanf(buf+2*i,"%2hhx",full_data+140+i);
 	    }
 	    sha256d((unsigned char *)hash,full_data,1487);
+	    printf("hash:");
+	    for (int i=0; i<32; i++) {
+	      printf("%02x",((unsigned char *)hash)[i]);
+	    }
+	    printf("\n");
 	    if (fulltest(hash, ptarget)) {
+	      printf("good hash\n");
+	      for (int i=0; i<140; i++) {
+		printf("%02x",full_data[i]);
+	      }
+	      printf("\n");
 	      full_data[1487]=0;
 	      for (int i=35; i<372; i++) {
 		pdata[i] = swab32(((uint32_t *)full_data)[i]);
 	      }
 	      work_set_target_ratio(work, hash);
 	      *hashes_done = n - first_nonce + 1;
+	      if (target) {
+		memcpy(best_hash,hash,32);
+	      }
 	      return 1;
 	    }
 	  }

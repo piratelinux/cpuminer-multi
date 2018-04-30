@@ -75,6 +75,7 @@ enum {
 #endif
 
 #include "compat.h"
+#include "byteswap.h"
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
@@ -229,7 +230,7 @@ int scanhash_quark(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *
 void init_quarkhash_contexts();
 int scanhash_qubit(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
 int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-int scanhash_equihah(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
+int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, uint32_t * target, uint32_t * best_hash);
 unsigned char *scrypt_buffer_alloc(int N);
 int scanhash_scrypt(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done,
 					unsigned char *scratchbuf, uint32_t N);
@@ -368,7 +369,7 @@ char *abin2hex(const unsigned char *p, size_t len);
 bool hex2bin(unsigned char *p, const char *hexstr, size_t len);
 bool jobj_binary(const json_t *obj, const char *key, void *buf, size_t buflen);
 int varint_encode(unsigned char *p, uint64_t n);
-size_t address_to_script(unsigned char *out, size_t outsz, const char *addr);
+size_t address_to_script(unsigned char *out, size_t outsz, const char *addr, const int addrver_extra);
 int timeval_subtract(struct timeval *result, struct timeval *x, struct timeval *y);
 bool fulltest(const uint32_t *hash, const uint32_t *target);
 void work_set_target(struct work* work, double diff);

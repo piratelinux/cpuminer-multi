@@ -49,6 +49,22 @@ typedef __uint128_t uint128_t;
 #define INIT_SIZE_BLK   8
 #define INIT_SIZE_BYTE (INIT_SIZE_BLK * AES_BLOCK_SIZE)
 
+#define VARIANT1_1(p) \
+  do if (variant > 0) \
+       { \
+	 const uint8_t tmp = ((const uint8_t*)(p))[11]; \
+	 static const uint32_t table = 0x75310; \
+	 const uint8_t index = (((tmp >> 3) & 6) | (tmp & 1)) << 1; \
+	 ((uint8_t*)(p))[11] = tmp ^ ((table >> index) & 0x30); \
+       } while(0)
+
+#define VARIANT1_INIT() \
+  if (variant > 0 && inlen < 43) \
+    { \
+      return 0; \
+    } \
+  const uint64_t tweak1_2 = variant > 0 ? *((const uint64_t*) (((const uint8_t*)input) + 35)) ^ ctx->state.hs.w[24] : 0
+
 #pragma pack(push, 1)
 union cn_slow_hash_state {
 	union hash_state hs;
@@ -170,10 +186,14 @@ struct cryptonight_ctx {
 
 static void cryptonight_hash_ctx(void* output, const void* input, int len, struct cryptonight_ctx* ctx)
 {
+  int variant = 1;
+  int inlen = len;
 	hash_process(&ctx->state.hs, (const uint8_t*) input, len);
 	ctx->aes_ctx = (oaes_ctx*) oaes_alloc();
 	size_t i, j;
 	memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
+
+	VARIANT1_INIT();
 
 	oaes_key_import_data(ctx->aes_ctx, ctx->state.hs.b, AES_KEY_SIZE);
 	for (i = 0; likely(i < MEMORY); i += INIT_SIZE_BYTE) {
@@ -200,12 +220,14 @@ static void cryptonight_hash_ctx(void* output, const void* input, int len, struc
 		j = e2i(ctx->a);
 		aesb_single_round(&ctx->long_state[j], ctx->c, ctx->a);
 		xor_blocks_dst(ctx->c, ctx->b, &ctx->long_state[j]);
+		VARIANT1_1(&ctx->long_state[((uint64_t *)(ctx->a))[0] & 0x1FFFF0]);
 		/* Iteration 2 */
 		mul_sum_xor_dst(ctx->c, ctx->a, &ctx->long_state[e2i(ctx->c)]);
 		/* Iteration 3 */
 		j = e2i(ctx->a);
 		aesb_single_round(&ctx->long_state[j], ctx->b, ctx->a);
 		xor_blocks_dst(ctx->b, ctx->c, &ctx->long_state[j]);
+		VARIANT1_1(&ctx->long_state[((uint64_t *)(ctx->a))[0] & 0x1FFFF0]);
 		/* Iteration 4 */
 		mul_sum_xor_dst(ctx->b, ctx->a, &ctx->long_state[e2i(ctx->b)]);
 	}

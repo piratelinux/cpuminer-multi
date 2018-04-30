@@ -195,7 +195,7 @@ bool opt_benchmark = false;
 bool opt_redirect = true;
 bool opt_showdiff = true;
 bool opt_extranonce = true;
-bool want_longpoll = true;
+bool want_longpoll = false; //tst
 bool have_longpoll = false;
 bool have_gbt = true;
 bool allow_getwork = true;
@@ -224,11 +224,15 @@ int64_t opt_affinity = -1L;
 int opt_priority = 0;
 int num_cpus;
 char *rpc_url;
+char *rpc_url_aux;
 char *rpc_userpass;
+char *rpc_userpass_aux;
 char *rpc_user, *rpc_pass;
 char *short_url = NULL;
 static unsigned char pk_script[25] = { 0 };
+static unsigned char pk_script_aux[34] = { 0 };
 static size_t pk_script_size = 0;
+static size_t pk_script_aux_size = 0;
 static char coinbase_sig[101] = { 0 };
 char *opt_cert;
 char *opt_proxy;
@@ -341,7 +345,9 @@ Options:\n\
                           ar2          AR2\n\
                           equihash     EQUIHASH\n\
   -o, --url=URL         URL of mining server\n\
+  -U, --urlaux=URL      URL of aux chain mining server\n\
   -O, --userpass=U:P    username:password pair for mining server\n\
+  -A --userpassaux=U:P  username:password pair for aux chain mining server\n\
   -u, --user=USERNAME   username for mining server\n\
   -p, --pass=PASSWORD   password for mining server\n\
       --cert=FILE       certificate for mining server using SSL\n\
@@ -397,7 +403,7 @@ static char const short_options[] =
 #ifdef HAVE_SYSLOG_H
 	"S"
 #endif
-	"a:b:Bc:CDf:hm:n:p:Px:qr:R:s:t:T:o:u:O:V";
+	"a:b:Bc:CDf:hm:n:p:Px:qr:R:s:t:T:o:u:O:U:A:V";
 
 static struct option const options[] = {
 	{ "algo", 1, NULL, 'a' },
@@ -408,6 +414,7 @@ static struct option const options[] = {
 	{ "cputest", 0, NULL, 1006 },
 	{ "cert", 1, NULL, 1001 },
 	{ "coinbase-addr", 1, NULL, 1016 },
+	{ "coinbase-addr-aux", 1, NULL, 1017 },
 	{ "coinbase-sig", 1, NULL, 1015 },
 	{ "config", 1, NULL, 'c' },
 	{ "cpu-affinity", 1, NULL, 1020 },
@@ -447,8 +454,10 @@ static struct option const options[] = {
 	{ "threads", 1, NULL, 't' },
 	{ "timeout", 1, NULL, 'T' },
 	{ "url", 1, NULL, 'o' },
+	{ "urlaux", 1, NULL, 'U' },
 	{ "user", 1, NULL, 'u' },
 	{ "userpass", 1, NULL, 'O' },
+	{ "userpassaux", 1, NULL, 'A' },
 	{ "version", 0, NULL, 'V' },
 	{ 0, 0, 0, 0 }
 };
@@ -717,7 +726,26 @@ static bool get_mininginfo(CURL *curl, struct work *work)
 
 #define BLOCK_VERSION_CURRENT 3
 
-static bool gbt_work_decode(const json_t *val, struct work *work)
+char aux_hash [81];
+uint32_t aux_target[8];
+uint32_t aux_version = 0;
+uint32_t aux_curtime = 0;
+uchar* aux_scriptsig = 0;
+size_t aux_scriptsig_size = 0;
+uint32_t best_hash[32];
+uint32_t par_target[32];
+struct work * work_aux = 0;
+uchar* par_cbtx = 0;
+uchar* par_cbtx_lp = 0;
+size_t par_cbtx_size = 0;
+size_t par_cbtx_lp_size = 0;
+uchar** par_cbmb = 0;
+uchar** par_cbmb_lp = 0;
+size_t par_cbmb_size = 0;
+size_t par_cbmb_lp_size = 0;
+bool lp = false;
+
+static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 {
 	int i, n;
 	uint32_t version, curtime, bits;
@@ -767,8 +795,9 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		goto out;
 	}
 	version = (uint32_t) json_integer_value(tmp);
-	if ((version & 0xffU) > BLOCK_VERSION_CURRENT) {
+	if ((version & 0xffU) > BLOCK_VERSION_CURRENT && (version != 4 || opt_algo != ALGO_EQUIHASH)) {
 		if (version_reduce) {
+		  printf("version_reduce\n");
 			version = (version & ~0xffU) | BLOCK_VERSION_CURRENT;
 		} else if (have_gbt && allow_getwork && !version_force) {
 			applog(LOG_DEBUG, "Switching to getwork, gbt version %d", version);
@@ -819,6 +848,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 	tmp = json_object_get(val, "coinbasetxn");
 	if (tmp) {
 		const char *cbtx_hex = json_string_value(json_object_get(tmp, "data"));
+		//printf("initial cbtx=\n%s\n",cbtx_hex);
 		cbtx_size = cbtx_hex ? (int) strlen(cbtx_hex) / 2 : 0;
 		cbtx = (uchar*) malloc(cbtx_size + 100);
 		if (cbtx_size < 60 || !hex2bin(cbtx, cbtx_hex, cbtx_size)) {
@@ -841,34 +871,57 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 			goto out;
 		}
 		cbvalue = (int64_t) (json_is_integer(tmp) ? json_integer_value(tmp) : json_number_value(tmp));
+		printf("cbvalue = %lu\n",cbvalue);
 		cbtx = (uchar*) malloc(256);
 		le32enc((uint32_t *)cbtx, 1); /* version */
 		cbtx[4] = 1; /* in-counter */
 		memset(cbtx+5, 0x00, 32); /* prev txout hash */
 		le32enc((uint32_t *)(cbtx+37), 0xffffffff); /* prev txout index */
-		cbtx_size = 43;
-		/* BIP 34: height in coinbase */
-		for (n = work->height; n; n >>= 8)
-			cbtx[cbtx_size++] = n & 0xff;
-		cbtx[42] = cbtx_size - 43;
-		cbtx[41] = cbtx_size - 42; /* scriptsig length */
+		if (aux) {
+		  cbtx[41] = (char)aux_scriptsig_size;
+		  memcpy(cbtx+42,aux_scriptsig,aux_scriptsig_size);
+		  cbtx_size = 42+aux_scriptsig_size;
+		}
+		else {
+		  cbtx_size = 43;
+		  /* BIP 34: height in coinbase */
+		  for (n = work->height; n; n >>= 8)
+		    cbtx[cbtx_size++] = n & 0xff;
+		  cbtx[42] = cbtx_size - 43;
+		  cbtx[41] = cbtx_size - 42; /* scriptsig length */
+		}
 		le32enc((uint32_t *)(cbtx+cbtx_size), 0xffffffff); /* sequence */
 		cbtx_size += 4;
 		cbtx[cbtx_size++] = 1; /* out-counter */
 		le32enc((uint32_t *)(cbtx+cbtx_size), (uint32_t)cbvalue); /* value */
 		le32enc((uint32_t *)(cbtx+cbtx_size+4), cbvalue >> 32);
 		cbtx_size += 8;
-		cbtx[cbtx_size++] = (uint8_t) pk_script_size; /* txout-script length */
-		memcpy(cbtx+cbtx_size, pk_script, pk_script_size);
-		cbtx_size += (int) pk_script_size;
+		if (aux) {
+		  if (opt_algo == ALGO_EQUIHASH) {
+		    cbtx[cbtx_size++] = (uint8_t) pk_script_aux_size+1;
+		    cbtx[cbtx_size++] = (uint8_t) pk_script_aux_size-1;
+		  }
+		  else {
+		    cbtx[cbtx_size++] = (uint8_t) pk_script_aux_size; /* txout-script length */
+		  }
+		  memcpy(cbtx+cbtx_size, pk_script_aux, pk_script_aux_size);
+		  cbtx_size += (int) pk_script_aux_size;
+		  coinbase_append = false;
+		}
+		else {
+		  cbtx[cbtx_size++] = (uint8_t) pk_script_size; /* txout-script length */
+		  memcpy(cbtx+cbtx_size, pk_script, pk_script_size);
+		  cbtx_size += (int) pk_script_size;
+		  coinbase_append = true;
+		}
 		le32enc((uint32_t *)(cbtx+cbtx_size), 0); /* lock time */
 		cbtx_size += 4;
-		coinbase_append = true;
 	}
 	if (coinbase_append) {
 		unsigned char xsig[100];
 		int xsig_len = 0;
 		if (*coinbase_sig) {
+		  printf("have coinbase_sig\n");
 			n = (int) strlen(coinbase_sig);
 			if (cbtx[41] + xsig_len + n <= 100) {
 				memcpy(xsig+xsig_len, coinbase_sig, n);
@@ -889,6 +942,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 					break;
 				}
 				if (cbtx[41] + xsig_len + n <= 100) {
+				  printf("copy coinbaseaux\n");
 					memcpy(xsig+xsig_len, buf, n);
 					xsig_len += n;
 				}
@@ -910,6 +964,71 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 			cbtx_size += n;
 		}
 	}
+	printf("cbtx = ");
+	for (int i=0; i<cbtx_size; i++) printf("%02x",cbtx[i]);
+	printf("\n");
+	if (rpc_url_aux && !aux) {
+	  printf("append to coinbase: %s\n",aux_hash);
+	  int script_start = 41;
+	  if (opt_algo == ALGO_EQUIHASH) script_start = 45;
+	  unsigned char xsig[100];
+	  int xsig_len = 0;
+	  if (*coinbase_sig) {
+	    printf("have coinbase_sig\n");
+	    n = (int) strlen(coinbase_sig);
+	    if (cbtx[script_start] + xsig_len + n <= 100) {
+	      memcpy(xsig+xsig_len, coinbase_sig, n);
+	      xsig_len += n;
+	    } else {
+	      applog(LOG_WARNING, "Signature does not fit in coinbase, skipping");
+	    }
+	  }
+	  unsigned char buf[100];
+	  const char *s = aux_hash;
+	  n = s ? (int) (strlen(s) / 2) : 0;
+	  if (!s || n > 100 || !hex2bin(buf, s, n)) {
+	    applog(LOG_ERR, "JSON invalid coinbaseaux");
+	    return false;
+	  }
+	  printf("cbtxss %u\n",cbtx[script_start]);
+	  if (cbtx[script_start] + xsig_len + n <= 100) {
+	    printf("copy to coinbase\n");
+	    memcpy(xsig+xsig_len, buf, n);
+	    xsig_len += n;
+	  }
+	  if (xsig_len) {
+	    printf("move and copy to coinbase\n");
+	    unsigned char *ssig_end = cbtx + script_start + 1 + cbtx[script_start];
+	    int push_len = cbtx[script_start] + xsig_len < 76 ? 1 :
+	      cbtx[script_start] + 2 + xsig_len > 100 ? 0 : 2;
+	    n = xsig_len + push_len;
+	    memmove(ssig_end + n, ssig_end, cbtx_size - script_start - 1 - cbtx[script_start]);
+	    cbtx[script_start] += n;
+	    if (push_len == 2)
+	      *(ssig_end++) = 0x4c; /* OP_PUSHDATA1 */
+	    if (push_len)
+	      *(ssig_end++) = xsig_len;
+	    memcpy(ssig_end, xsig, xsig_len);
+	    cbtx_size += n;
+	    if (lp) {
+	      if (par_cbtx_lp_size) free(par_cbtx_lp);
+	      par_cbtx_lp = malloc(cbtx_size);
+	      memcpy(par_cbtx_lp,cbtx,cbtx_size);
+	      par_cbtx_lp_size = cbtx_size;
+	    }
+	    else {
+	      if (par_cbtx_size) free(par_cbtx);
+	      par_cbtx = malloc(cbtx_size);
+	      memcpy(par_cbtx,cbtx,cbtx_size);
+	      par_cbtx_size = cbtx_size;
+	    }
+	    printf("par_cbtx = (%d)\n",par_cbtx_size);
+	    for (int i=0; i<par_cbtx_size; i++) {
+	      printf("%02x",par_cbtx[i]);
+	    }
+	    printf("\n");
+	  }
+	}
 
 	n = varint_encode(txc_vi, 1 + tx_count);
 	work->txs = (char*) malloc(2 * (n + cbtx_size + tx_size) + 1);
@@ -919,6 +1038,11 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 	/* generate merkle root */
 	merkle_tree = (uchar(*)[32]) calloc(((1 + tx_count + 1) & ~1), 32);
 	sha256d(merkle_tree[0], cbtx, cbtx_size);
+	printf("cbtx hash\n");
+	for (i=0;i<32;i++) {
+	  printf("%02x",merkle_tree[0][i]);
+	}
+	printf("\n");
 	for (i = 0; i < tx_count; i++) {
 		tmp = json_array_get(txa, i);
 		const char *tx_hex = json_string_value(json_object_get(tmp, "data"));
@@ -935,31 +1059,88 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		}
 	}
 	n = 1 + tx_count;
+	par_cbmb_size = 0;
+	int cbmb_cap = log2_ceil(n);
+	if (lp) {
+	  par_cbmb_lp = malloc(cbmb_cap*sizeof(uchar*));
+	}
+	else {
+	  par_cbmb = malloc(cbmb_cap*sizeof(uchar*));
+	}
+	printf("n=%d par_cbmb_cap = %lu\n",n,cbmb_cap);
+	if (!aux && n>1) {
+	  par_cbmb[0] = malloc(32);
+	  memcpy(par_cbmb[0],merkle_tree[1],32);
+	  printf("par_cbmb[0] =\n");
+	  for (i=0;i<32;i++) {
+	    printf("%02x",par_cbmb[0][i]);
+	  }
+	  printf("\n");
+	}
+	int i_cbmb = 0;
 	while (n > 1) {
+	  i_cbmb++;
 		if (n % 2) {
 			memcpy(merkle_tree[n], merkle_tree[n-1], 32);
 			++n;
 		}
 		n /= 2;
-		for (i = 0; i < n; i++)
-			sha256d(merkle_tree[i], merkle_tree[2*i], 64);
+		for (i = 0; i < n; i++) {
+		  sha256d(merkle_tree[i], merkle_tree[2*i], 64);
+		  if (i==1 && !aux) {
+		    par_cbmb[i_cbmb] = malloc(32);
+		    memcpy(par_cbmb[i_cbmb],merkle_tree[i],32);
+		    printf("added merkle tree to par_cbmb %u\n",i_cbmb);
+		    for (int j=0; j<32; j++) {
+		      printf("%02x",par_cbmb[i_cbmb][j]);
+		    }
+		    printf("\n");
+		  }
+		}
 	}
+	if (lp) {
+	  par_cbmb_lp_size = i_cbmb;
+	}
+	else {
+	  par_cbmb_size = i_cbmb;
+	}
+	printf("i_cbmb = %d\n",i_cbmb);
 
 	/* assemble block header */
-	work->data[0] = swab32(version);
+	if (aux) printf("aux true\n");
+	if (!aux) printf("aux false\n");
+	printf("version is %u\n",version);
+	if (aux) {
+	  work->data[0] = swab32(aux_version);
+	}
+	else {
+	  work->data[0] = swab32(version);
+	}
 	
 	for (i = 0; i < 8; i++)
 		work->data[8 - i] = le32dec(prevhash + i);
 	for (i = 0; i < 8; i++)
 		work->data[9 + i] = be32dec((uint32_t *)merkle_tree[0] + i);
+	printf("hash merkle root =\n");
+	for (i=0;i<32;i++) {
+	  printf("%02x",((unsigned char *)work->data)[36+i]);
+	}
+	printf("\n");
 	if (opt_algo == ALGO_EQUIHASH) {
 	  for (i = 0; i < 8; i++)
 	    work->data[17 + i] = 0;
-	  uint32_t curtime_s = swab32(curtime);
-	  work->data[25] = swab32(curtime);
+	  printf("work data 0 for hash reserved\n");
+	  //uint32_t curtime_s = swab32(curtime);
+	  if (aux) {
+	    work->data[25] = swab32(aux_curtime);
+	  }
+	  else {
+	    work->data[25] = swab32(curtime);
+	  }
 	  work->data[26] = le32dec(&bits);
 	  for (i=0;i<8;i++)
 	    work->data[27+i] = 0;
+	  memset(work->data+35,0x00,1);
 	  /*memset(work->data+35,0x00,48);
 	  work->data[35] = 0x80000000;
 	  work->data[46] = 0x00000280;*/
@@ -978,8 +1159,9 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		goto out;
 	}
 	
-	for (i = 0; i < ARRAY_SIZE(work->target); i++)
-		work->target[7 - i] = be32dec(target + i);
+	for (i = 0; i < ARRAY_SIZE(work->target); i++) {
+	  work->target[7 - i] = be32dec(target + i);
+	}
 
 	tmp = json_object_get(val, "workid");
 	if (tmp) {
@@ -989,6 +1171,8 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		}
 		work->workid = strdup(json_string_value(tmp));
 	}
+
+	if (!work->txs) printf("!work->txs\n");
 
 	rc = true;
 out:
@@ -1008,8 +1192,54 @@ out:
 
 	free(merkle_tree);
 	free(cbtx);
+
+	if (!aux) {
+	  printf("par work data: ");
+	  for (int i=0; i<140; i++) {
+	    printf("%02x",((unsigned char *)work->data)[i]);
+	  }
+	  printf("\n");
+	}
 	return rc;
 }
+
+static bool gab_work_decode(const json_t *val, struct work *work) {
+
+  uint32_t target[8];
+  bool rc = false;
+  
+  if (unlikely(!jobj_binary(val, "target", target, sizeof(target)))) {
+    applog(LOG_ERR, "JSON invalid target");
+    goto outgab;
+  }
+
+  int i = 0;
+  for (i = 0; i < ARRAY_SIZE(work->target); i++) {
+    aux_target[i] = target[i];
+  }
+
+  aux_version = (uint32_t) json_integer_value(json_object_get(val, "version"));
+  printf("aux_version = %u\n",aux_version);
+
+  aux_curtime = (uint32_t) json_integer_value(json_object_get(val, "curtime"));
+  printf("aux_curtime = %u\n",aux_curtime);
+
+  const char * scriptsig = json_string_value(json_object_get(val, "scriptsig"));
+  aux_scriptsig_size = strlen(scriptsig)/2;
+  aux_scriptsig = malloc(aux_scriptsig_size);
+  hex2bin(aux_scriptsig,scriptsig,aux_scriptsig_size);
+
+  const char * hash = json_string_value(json_object_get(val, "hash"));
+  strcpy(aux_hash,hash);
+  strcat(aux_hash,"0100000000000000");
+
+  rc = true;
+  
+  outgab:
+  return rc;  
+  
+}
+  
 
 #define YES "yes!"
 #define YAY "yay!!!"
@@ -1079,18 +1309,31 @@ static int share_result(int result, struct work *work, const char *reason)
 	return 1;
 }
 
+#define GBT_CAPABILITIES "[\"coinbasetxn\", \"coinbasevalue\", \"longpoll\", \"workid\"]"
+
+static const char *gbt_req =
+          "{\"method\": \"getblocktemplate\", \"params\": [{\"capabilities\": "
+  GBT_CAPABILITIES "}], \"id\":0}\r\n";
+
 static bool submit_upstream_work(CURL *curl, struct work *work)
 {
-	json_t *val, *res, *reason;
+
+  printf("submit upstream work\n");
+  
+  json_t *val, *res, *reason;
 	char s[JSON_BUF_LEN];
 	int i;
 	bool rc = false;
-
+	int err;
+	
 	/* pass if the previous hash is not the current previous hash */
 	if (opt_algo != ALGO_SIA && !submit_old && memcmp(&work->data[1], &g_work.data[1], 32)) {
-		if (opt_debug)
-			applog(LOG_DEBUG, "DEBUG: stale work detected, discarding");
-		return true;
+	  if (!rpc_url_aux) {
+	    printf("previous hash not current\n");
+	    if (opt_debug)
+	      applog(LOG_DEBUG, "DEBUG: stale work detected, discarding");
+	    return true;
+	  }
 	}
 
 	if (!have_stratum && allow_mininginfo) {
@@ -1099,11 +1342,15 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		if (work->height && work->height <= net_blocks) {
 			if (opt_debug)
 				applog(LOG_WARNING, "block %u was already solved", work->height);
-			return true;
+			printf("block already solved\n");
+			if (!rpc_url_aux) {
+			  return true;
+			}
 		}
 	}
 
 	if (have_stratum) {
+	  printf("have stratum\n");
 		uint32_t ntime, nonce;
 		char ntimestr[9], noncestr[9];
 
@@ -1180,7 +1427,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		}
 
 	} else if (work->txs) { /* gbt */
-	  
+	  printf("have work->txs\n");
 		char data_str[2 * sizeof(work->data) + 1];
 		char *req;
 
@@ -1189,31 +1436,140 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		int header_len = 80;
 		if (opt_algo == ALGO_EQUIHASH) header_len = 1487;
 		bin2hex(data_str, (unsigned char *)work->data, header_len);
-		
-		if (work->workid) {
-			char *params;
-			val = json_object();
-			json_object_set_new(val, "workid", json_string(work->workid));
-			params = json_dumps(val, 0);
-			json_decref(val);
-			req = (char*) malloc(128 + 2 * header_len + strlen(work->txs) + strlen(params));
-			sprintf(req,
-				"{\"method\": \"submitblock\", \"params\": [\"%s%s\", %s], \"id\":4}\r\n",
-				data_str, work->txs, params);
-			free(params);
-		} else {
-			req = (char*) malloc(128 + 2 * header_len + strlen(work->txs));
-			sprintf(req,
-				"{\"method\": \"submitblock\", \"params\": [\"%s%s\"], \"id\":4}\r\n",
-				data_str, work->txs);
-		}
 
-		val = json_rpc_call(curl, rpc_url, rpc_userpass, req, NULL, 0);
-		free(req);
-		if (unlikely(!val)) {
-			applog(LOG_ERR, "submit_upstream_work json_rpc_call failed");
-			goto out;
+		printf("best_hash= ");
+		for (i=0;i<32;i++) {
+		  printf("%02x",((unsigned char *)best_hash)[i]);
 		}
+		printf("\n");
+		printf("target= ");
+		for (i=0;i<32;i++) {
+		  printf("%02x",((unsigned char *)par_target)[i]);
+		}
+		printf("\naux target= ");
+		for (i=0;i<32;i++) {
+		  printf("%02x",((unsigned char *)aux_target)[i]);
+		}
+		printf("\n");
+
+		if (fulltest(best_hash,par_target)) {
+		  printf("submit to parent chain\n");
+		  if (work->workid) {
+		    char *params;
+		    val = json_object();
+		    json_object_set_new(val, "workid", json_string(work->workid));
+		    params = json_dumps(val, 0);
+		    json_decref(val);
+		    req = (char*) malloc(128 + 2 * header_len + strlen(work->txs) + strlen(params));
+		    sprintf(req,
+			    "{\"method\": \"submitblock\", \"params\": [\"%s%s\", %s], \"id\":4}\r\n",
+			    data_str, work->txs, params);
+		    free(params);
+		  } else {
+		    req = (char*) malloc(128 + 2 * header_len + strlen(work->txs));
+		    sprintf(req,
+			    "{\"method\": \"submitblock\", \"params\": [\"%s%s\"], \"id\":4}\r\n",
+			    data_str, work->txs);
+		  }
+		  printf("req = %s\n",req);
+		  val = json_rpc_call(curl, rpc_url, rpc_userpass, req, NULL, 0);
+		  //submit aux block todo
+		  free(req);
+		  if (unlikely(!val)) {
+		    applog(LOG_ERR, "submit_upstream_work json_rpc_call failed");
+		    goto out;
+		  }
+		}
+		uchar * par_cbtx_cur = 0;
+		size_t par_cbtx_cur_size = 0;
+		uchar ** par_cbmb_cur = 0;
+		size_t par_cbmb_cur_size = 0;
+		if (lp) {
+		  par_cbtx_cur = par_cbtx_lp;
+		  par_cbtx_cur_size = par_cbtx_lp_size;
+		  par_cbmb_cur = par_cbmb_lp;
+		  par_cbmb_cur_size = par_cbmb_lp_size;
+		}
+		else {
+		  par_cbtx_cur = par_cbtx;
+		  par_cbtx_cur_size = par_cbtx_size;
+		  par_cbmb_cur = par_cbmb;
+		  par_cbmb_cur_size = par_cbmb_size;
+		}
+		if (true || fulltest(best_hash,aux_target) && par_cbmb_cur) {
+		  printf("submit to aux chain\n");
+		  //printf("aux_hash = %s\n",aux_hash);
+		  //val = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, gbt_req, &err, JSON_RPC_QUIET_404);
+		  printf("aux_hash= %s\n",aux_hash);
+		  printf("par_cbtx= \n");
+		  for (i=0;i<par_cbtx_cur_size;i++) {
+		    printf("%02x",par_cbtx_cur[i]);
+		  }
+		  printf("\n");
+		  char data_str_aux[2 * sizeof(work_aux->data) + 1 + 2*par_cbtx_size+64+2*par_cbmb_size*32+4];
+		  printf("par_cbmb (%d) =\n",par_cbmb_cur_size);
+		  for (i=0;i<par_cbmb_cur_size;i++) {
+		    for (int j=0;j<32;j++) {
+		      printf("%02x",par_cbmb_cur[i][j]);
+		    }
+		    printf("\n");
+		  }
+		  printf("\n");
+		  //bool rca = gbt_work_decode(json_object_get(val, "result"), work_aux, true);
+		  /*		  for (i = 0; i < ARRAY_SIZE(work_aux->data); i++)
+				  be32enc(work_aux->data + i, work_aux->data[i]);*/
+		  if (opt_algo == ALGO_EQUIHASH) {
+		    //bin2hex(data_str_aux, (unsigned char *)work_aux->data, 141);
+		    sprintf(data_str_aux,"%02x",(unsigned char)par_cbtx_cur_size);
+		    //sprintf(data_str_aux+2*141+2,"%04x",bswap_16(par_cbtx_size));
+ 		    bin2hex(data_str_aux+2, (unsigned char *)par_cbtx_cur,par_cbtx_cur_size);
+		    bin2hex(data_str_aux+2+2*par_cbtx_cur_size, (unsigned char *)best_hash,32);
+		    sprintf(data_str_aux+2+2*par_cbtx_cur_size+64,"%02x",(unsigned char)par_cbmb_cur_size);
+		    for (i=0;i<par_cbmb_cur_size;i++) {
+		      bin2hex(data_str_aux+2+2*par_cbtx_cur_size+64+2+i*64,par_cbmb_cur[i],32);
+		    }
+		  }
+		  else {
+		    //bin2hex(data_str_aux, (unsigned char *)work_aux->data, header_len);
+		    bin2hex(data_str_aux, (unsigned char *)par_cbtx_cur,par_cbtx_cur_size);
+		    bin2hex(data_str_aux+2*par_cbtx_cur_size, (unsigned char *)best_hash,32);
+		    for (i=0;i<par_cbmb_cur_size;i++) {
+		      bin2hex(data_str_aux+2*par_cbtx_cur_size+64+i*64,par_cbmb_cur[i],32);
+		    }
+		  }
+		  strcat(data_str_aux,"000000000000000000");
+		  
+		  //unsigned char hash_test[32];
+		  //sha256d(hash_test,(unsigned char *)work_aux->data,141);
+		  /* 		  printf("work_aux->data= ");
+		  for(i=0;i<141;i++) {
+		    printf("%02x",((unsigned char *)work_aux->data)[i]);
+		  }
+		  printf("\n");
+		  printf("hash_test= ");
+		  for (i=0;i<32;i++) {
+		    printf("%02x",hash_test[i]);
+		  }
+		  printf("\n");*/
+		  char aux_hash_trimmed [65];
+		  for (i=0;i<32;i++) {
+		    memcpy(aux_hash_trimmed+2*i,aux_hash+2*i,2);
+		  }
+		  aux_hash_trimmed[64] = '\0';
+		  
+		  req = (char*) malloc(300 + 2 * sizeof(work_aux->data) + 1 + 2*par_cbtx_cur_size + 64 + par_cbmb_cur_size*64+strlen(data_str)+4);
+		  sprintf(req,
+			  "{\"method\": \"getauxblock\", \"params\": [\"%s\",\"%s%s\"], \"id\":4}\r\n",
+			  aux_hash_trimmed,data_str_aux,data_str);
+		  printf("aux req: %s\n",req);
+		  val = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, req, NULL, 0);;
+		  free(req);
+		  if (unlikely(!val)) {
+		    applog(LOG_ERR, "aux submit_upstream_work json_rpc_call failed");
+		    goto out;
+		  }
+		}
+		
 
 		res = json_object_get(val, "result");
 		if (json_is_object(res)) {
@@ -1341,19 +1697,20 @@ out:
 static const char *getwork_req =
 	"{\"method\": \"getwork\", \"params\": [], \"id\":0}\r\n";
 
-#define GBT_CAPABILITIES "[\"coinbasetxn\", \"coinbasevalue\", \"longpoll\", \"workid\"]"
-
-static const char *gbt_req =
-	"{\"method\": \"getblocktemplate\", \"params\": [{\"capabilities\": "
-	GBT_CAPABILITIES "}], \"id\":0}\r\n";
 static const char *gbt_lp_req =
 	"{\"method\": \"getblocktemplate\", \"params\": [{\"capabilities\": "
 	GBT_CAPABILITIES ", \"longpollid\": \"%s\"}], \"id\":0}\r\n";
+static const char *gab_req =
+	"{\"method\": \"getauxblock\", \"params\": [], \"id\":0}\r\n";
 
-static bool get_upstream_work(CURL *curl, struct work *work)
-{
+static bool get_upstream_work(CURL *curl, struct work *work, struct work *work_aux)
+{ 
 	json_t *val;
+	json_t* val_aux;
+	json_t* val_auxgbt;
 	int err;
+	int err_aux;
+	int err_auxgbt;
 	bool rc;
 	struct timeval tv_start, tv_end, diff;
 
@@ -1368,6 +1725,11 @@ start:
 		val = json_rpc_call(curl, rpc_url, rpc_userpass,
 		                    have_gbt ? gbt_req : getwork_req,
 		                    &err, have_gbt ? JSON_RPC_QUIET_404 : 0);
+
+		if (rpc_url_aux) {
+		  val_aux = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, gab_req, &err_aux, JSON_RPC_QUIET_404);
+		  val_auxgbt = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, gbt_req, &err_auxgbt, JSON_RPC_QUIET_404);
+		}
 	}
 	gettimeofday(&tv_end, NULL);
 
@@ -1394,13 +1756,49 @@ start:
 		return false;
 
 	if (have_gbt) {
-		rc = gbt_work_decode(json_object_get(val, "result"), work);
-		if (!have_gbt) {
-			json_decref(val);
-			goto start;
-		}
+	  json_dumps(json_object_get(val,"result"),0);
+	  json_dumps(json_object_get(val_aux,"result"),0);
+	  if (work_aux) {
+	    rc = gab_work_decode(json_object_get(val_aux,"result"),work_aux);
+	    //rc = gbt_work_decode(json_object_get(val_auxgbt, "result"), work_aux, true);
+	    /*for (int i = 0; i < ARRAY_SIZE(work_aux->data); i++)
+	      be32enc(work_aux->data + i, work_aux->data[i]);
+	      unsigned char hash_tmp[32];*/
+	    /*	    printf("new work_aux->data= ");
+	    for(int i=0;i<141;i++) {
+	      printf("%02x",((unsigned char *)work_aux->data)[i]);
+	    }
+	    printf("\n");
+	    sha256d(hash_tmp,(unsigned char *)work_aux->data,141);
+	    for (int i=0; i<32; i++) {
+	      sprintf(aux_hash+2*i,"%02x",hash_tmp[31-i]);
+	    }
+	    strcat(aux_hash,"0100000000000000");*/
+	    //printf("new aux_hash = %s\n",aux_hash);
+	    //memcpy(aux_target,work_aux->target,32);
+	  }
+	  printf("do gbt work decode par\n");
+	  lp = false;
+	  rc = gbt_work_decode(json_object_get(val, "result"), work, false);
+	  memcpy(par_target,work->target,32);
+	  printf("work target: ");
+	  for (int i=0; i<32; i++) {
+	    printf("%02x",((unsigned char *)work->target)[i]);
+	  }
+	  printf("\n");
+	  if (work_aux) {
+	    printf("aux work target: ");
+	    for (int i=0; i<32; i++) {
+	      printf("%02x",((unsigned char *)work_aux->target)[i]);
+	    }
+	    printf("\n");
+	  }
+	  if (!have_gbt) {
+	    json_decref(val);
+	    goto start;
+	  }
 	} else {
-		rc = work_decode(json_object_get(val, "result"), work);
+	  rc = work_decode(json_object_get(val, "result"), work);
 	}
 
 	if (opt_protocol && rc) {
@@ -1438,14 +1836,22 @@ static void workio_cmd_free(struct workio_cmd *wc)
 static bool workio_get_work(struct workio_cmd *wc, CURL *curl)
 {
 	struct work *ret_work;
+	struct work *ret_work_aux;
 	int failures = 0;
 
 	ret_work = (struct work*) calloc(1, sizeof(*ret_work));
+	if (rpc_url_aux) {
+	  ret_work_aux = (struct work*) calloc(1, sizeof(*ret_work_aux));
+	}
+	else {
+	  ret_work_aux = 0;
+	}
 	if (!ret_work)
 		return false;
 
+	work_aux = ret_work_aux;
 	/* obtain new work from bitcoin via JSON-RPC */
-	while (!get_upstream_work(curl, ret_work)) {
+	while (!get_upstream_work(curl, ret_work, ret_work_aux)) {
 		if (unlikely((opt_retries >= 0) && (++failures > opt_retries))) {
 			applog(LOG_ERR, "json_rpc_call failed, terminating workio thread");
 			free(ret_work);
@@ -2359,7 +2765,12 @@ static void *miner_thread(void *userdata)
 		  rc = scanhash_ar2(thr_id, &work, max_nonce, &hashes_done);
 		  break;
 		case ALGO_EQUIHASH:
-		  rc = scanhash_equihash(thr_id, &work, max_nonce, &hashes_done);
+		  if (rpc_url_aux) {
+		    rc = scanhash_equihash(thr_id, &work, max_nonce, &hashes_done, aux_target, best_hash);
+		  }
+		  else {
+		    rc = scanhash_equihash(thr_id, &work, max_nonce, &hashes_done, 0, 0);
+		  }
 		  break;
 		default:
 			/* should never happen */
@@ -2529,10 +2940,14 @@ start:
 			}
 			pthread_mutex_lock(&g_work_lock);
 			start_job_id = g_work.job_id ? strdup(g_work.job_id) : NULL;
-			if (have_gbt)
-				rc = gbt_work_decode(res, &g_work);
-			else
-				rc = work_decode(res, &g_work);
+			if (have_gbt) {
+			  printf("do gbt work decode par longpoll\n");
+			  lp = true;
+			  rc = gbt_work_decode(res, &g_work, false);
+			}
+			else {
+			  rc = work_decode(res, &g_work);
+			}
 			if (rc) {
 				bool newblock = g_work.job_id && strcmp(start_job_id, g_work.job_id);
 				newblock |= (start_diff != net_diff); // the best is the height but... longpoll...
@@ -3074,6 +3489,62 @@ void parse_arg(int key, char *arg)
 		rpc_pass = strdup(++p);
 		strhide(p);
 		break;
+	case 'U': {			/* --url */
+		char *ap, *hp;
+		ap = strstr(arg, "://");
+		ap = ap ? ap + 3 : arg;
+		hp = strrchr(arg, '@');
+		if (hp) {
+			*hp = '\0';
+			p = strchr(ap, ':');
+			if (p) {
+				free(rpc_userpass_aux);
+				rpc_userpass_aux = strdup(ap);
+				if (*p) *p++ = 'x';
+				v = (int) strlen(hp + 1) + 1;
+				memmove(p + 1, hp + 1, v);
+				memset(p + v, 0, hp - p);
+				hp = p;
+			}
+			*hp++ = '@';
+		} else
+			hp = ap;
+		if (ap != arg) {
+			if (strncasecmp(arg, "http://", 7) &&
+			    strncasecmp(arg, "https://", 8) &&
+			    strncasecmp(arg, "stratum+tcp://", 14)) {
+				fprintf(stderr, "unknown protocol -- '%s'\n", arg);
+				show_usage_and_exit(1);
+			}
+			free(rpc_url_aux);
+			rpc_url_aux = strdup(arg);
+			strcpy(rpc_url_aux + (ap - arg), hp);
+			short_url = &rpc_url_aux[ap - arg];
+		} else {
+			if (*hp == '\0' || *hp == '/') {
+				fprintf(stderr, "invalid URL -- '%s'\n",
+					arg);
+				show_usage_and_exit(1);
+			}
+			free(rpc_url_aux);
+			rpc_url_aux = (char*) malloc(strlen(hp) + 8);
+			sprintf(rpc_url_aux, "http://%s", hp);
+			short_url = &rpc_url[sizeof("http://")-1];
+		}
+		have_stratum = !opt_benchmark && !strncasecmp(rpc_url_aux, "stratum", 7);
+		break;
+	}
+	case 'A':			/* --userpass */
+		p = strchr(arg, ':');
+		if (!p) {
+			fprintf(stderr, "invalid username:password pair -- '%s'\n", arg);
+			show_usage_and_exit(1);
+		}
+		free(rpc_userpass_aux);
+		rpc_userpass_aux = strdup(arg);
+		//free(rpc_user);
+		strhide(p);
+		break;		
 	case 'x':			/* --proxy */
 		if (!strncasecmp(arg, "socks4://", 9))
 			opt_proxy_type = CURLPROXY_SOCKS4;
@@ -3135,12 +3606,88 @@ void parse_arg(int key, char *arg)
 		opt_showdiff = false;
 		break;
 	case 1016:			/* --coinbase-addr */
-		pk_script_size = address_to_script(pk_script, sizeof(pk_script), arg);
+ 	  if (opt_algo == ALGO_EQUIHASH) {
+	    printf("have algo equihash\n");
+	    //pk_script_size = address_to_script(pk_script, sizeof(pk_script), arg, 1);
+	    CURL *curl = curl_easy_init();
+	    json_t* val;
+	    int err;
+	    char validate_req [300];
+	    sprintf(validate_req,"{\"method\": \"validateaddress\", \"params\": [\"%s\"], \"id\":99}\r\n",arg);
+	    val = json_rpc_call(curl, rpc_url, rpc_userpass, validate_req, &err, JSON_RPC_QUIET_404);
+	    if (!val) printf("!val\n");
+	    val = json_object_get(val,"result");
+	    if (!val) printf("!val 2\n");
+	    val = json_object_get(val,"scriptPubKey");
+	    if (!val) printf("!val 3\n");
+	    const char * pk_script_hex = 0;
+	    if (json_is_string(val)) {
+	      pk_script_hex = json_string_value(val);
+	    }
+	    else {
+	      printf("not string\n");
+	      exit(0);
+	    }
+	    int added = 0;
+	    unsigned char* pk_script_it = pk_script;
+	    pk_script_size = 0;
+	    do {
+	      added = sscanf(pk_script_hex+pk_script_size*2,"%2hhx",pk_script_it);
+	      if (added>0) pk_script_size += added;
+	      pk_script_it++;
+	      //printf("pks added %c%c %d\n",*(pk_script_hex+2*pk_script_size-2*added),*(pk_script_hex+2*pk_script_size-2*added+1),added);
+	    } while (added>0);
+	    //printf("size of pk script = %lu\n",pk_script_size);
+	    curl_easy_cleanup(curl);
+	  }
+	  else {
+	    pk_script_size = address_to_script(pk_script, sizeof(pk_script), arg, 0);
+	  }
 		if (!pk_script_size) {
 			fprintf(stderr, "invalid address -- '%s'\n", arg);
 			show_usage_and_exit(1);
 		}
 		break;
+	case 1017:
+	  if (opt_algo == ALGO_EQUIHASH) {
+	    printf("have algo equihash aux\n");
+	    //pk_script_size = address_to_script(pk_script, sizeof(pk_script), arg, 1);
+	    CURL *curl = curl_easy_init();
+	    json_t* val;
+	    int err;
+	    char validate_req [300];
+	    sprintf(validate_req,"{\"method\": \"validateaddress\", \"params\": [\"%s\"], \"id\":98}\r\n",arg);
+	    val = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, validate_req, &err, JSON_RPC_QUIET_404);
+	    if (!val) printf("!val\n");
+	    val = json_object_get(val,"result");
+	    if (!val) printf("!val 2\n");
+	    val = json_object_get(val,"pubkey");
+	    if (!val) printf("!val 3\n");
+	    const char * pk_script_hex = 0;
+	    if (json_is_string(val)) {
+	      pk_script_hex = json_string_value(val);
+	    }
+	    else {
+	      printf("not string\n");
+	      exit(0);
+	    }
+	    int added = 0;
+	    unsigned char* pk_script_it = pk_script_aux;
+	    pk_script_aux_size = 0;
+	    do {
+	      added = sscanf(pk_script_hex+pk_script_aux_size*2,"%2hhx",pk_script_it);
+	      if (added>0) pk_script_aux_size += added;
+	      pk_script_it++;
+	      //printf("pks added %c%c %d\n",*(pk_script_hex+2*pk_script_size-2*added),*(pk_script_hex+2*pk_script_size-2*added+1),added);
+	    } while (added>0);
+	    pk_script_aux[33] = 0xac;
+	    pk_script_aux_size = 34;
+	    //printf("size of pk script = %lu\n",pk_script_size);
+	    curl_easy_cleanup(curl);
+	  }
+	  else {
+	    pk_script_aux_size = address_to_script(pk_script_aux, sizeof(pk_script_aux), arg, 0);
+	  }
 	case 1015:			/* --coinbase-sig */
 		if (strlen(arg) + 1 > sizeof(coinbase_sig)) {
 			fprintf(stderr, "coinbase signature too long\n");
