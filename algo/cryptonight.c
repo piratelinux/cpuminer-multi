@@ -334,8 +334,11 @@ static void cryptonight_hash_ctx_aes_ni(void* output, const void* input, int len
 	oaes_free((OAES_CTX **) &ctx->aes_ctx);
 }
 
-int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
+int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, bool xmr, uint32_t* target, uint32_t* best_hash)
 {
+  if (xmr) {
+    printf("scanhash xmr\n");
+  }
 	uint32_t _ALIGN(128) hash[HASH_SIZE / 4];
 	uint32_t _ALIGN(128) endiandata[20];
 	uint32_t *pdata = work->data;
@@ -349,35 +352,66 @@ int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint
 
 	struct cryptonight_ctx *ctx = (struct cryptonight_ctx*)malloc(sizeof(struct cryptonight_ctx));
 
-	for (int k=0; k < 19; k++)
-	  be32enc(&endiandata[k], pdata[k]);
+	if (!xmr) {
+	  for (int k=0; k < 19; k++)
+	    be32enc(&endiandata[k], pdata[k]);
+	}
 
-	if (aes_ni_supported) {
+	if (target && fulltest(ptarget,target)) {
+	  printf("use aux target since easier\n");
+	  ptarget = target;
+	}
+	printf("target:\n");
+	for (int i=0; i<32; i++) {
+	  printf("%02x",((unsigned char *)ptarget)[i]);
+	}
+	printf("\n");
+
+	if (/*aes_ni_supported*/0) {
 		do {
-		  be32enc(&endiandata[19], nonce);
+		  be32enc(&pdata[19], nonce);
 		  *nonceptr = ++n;
-			cryptonight_hash_ctx_aes_ni(hash, endiandata, 80, ctx);
-			if (unlikely(hash[7] < ptarget[7])) {
-				work_set_target_ratio(work, hash);
-				*hashes_done = n - first_nonce + 1;
-				free(ctx);
-				return 1;
-			}
-			nonce++;
+		  if (xmr) {
+		    cryptonight_hash_ctx_aes_ni(hash, pdata, 76, ctx);
+		  }
+		  else {
+		    cryptonight_hash_ctx_aes_ni(hash, endiandata, 80, ctx);
+		  }
+		  if (unlikely(hash[7] < ptarget[7])) {
+		    work_set_target_ratio(work, hash);
+		    *hashes_done = n - first_nonce + 1;
+		    free(ctx);
+		    return 1;
+		  }
+		  nonce++;
 		} while (likely((n <= max_nonce && !work_restart[thr_id].restart)));
 	} else {
 		do {
-		  be32enc(&endiandata[19], nonce);
-		  *nonceptr = ++n;
-			cryptonight_hash_ctx(hash, endiandata, 80, ctx);
-			char * hashhex = abin2hex((unsigned char *)hash, 32);
-			if (unlikely(hash[7] < ptarget[7])) {
-				work_set_target_ratio(work, hash);
-				*hashes_done = n - first_nonce + 1;
-				free(ctx);
-				return 1;
-			}
-			nonce++;
+		  if (xmr) {
+		    be32enc(&((unsigned char *)pdata)[39],nonce);
+		    *nonceptr = ++n;
+		    cryptonight_hash_ctx(hash, pdata, 76, ctx);
+		  }
+		  else {
+		    be32enc(&endiandata[19],nonce);
+		    *nonceptr = ++n;
+		    cryptonight_hash_ctx(hash, endiandata, 80, ctx);
+		  }
+		  char * hashhex = abin2hex((unsigned char *)hash, 32);
+		  printf("hash= %s\n",hashhex);
+		  if (unlikely(hash[7] < ptarget[7])) {
+		    if (fulltest(hash, ptarget)) {
+		      printf("good hash\n");
+		      work_set_target_ratio(work, hash);
+		      *hashes_done = n - first_nonce + 1;
+		      free(ctx);
+		      if (target) {
+			memcpy(best_hash,hash,32);
+		      }
+		      return 1;
+		    }
+		  }
+		  nonce++;
 		} while (likely((n <= max_nonce && !work_restart[thr_id].restart)));
 	}
 

@@ -436,6 +436,7 @@ json_t *json_rpc_call(CURL *curl, const char *url,
 		      const char *userpass, const char *rpc_req,
 		      int *curl_err, int flags)
 {
+  printf("in json_rpc_call with url = %s userpass = %s rpc_req = %s\n",url,userpass, rpc_req);
 	json_t *val, *err_val, *res_val;
 	int rc;
 	long http_rc;
@@ -481,7 +482,12 @@ json_t *json_rpc_call(CURL *curl, const char *url,
 	}
 	if (userpass) {
 		curl_easy_setopt(curl, CURLOPT_USERPWD, userpass);
-		curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+		if (jsonrpc_2 && url[strlen(url)-1]=='c') {
+		  curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST);
+		}
+		else {
+		  curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+		}
 	}
 #if LIBCURL_VERSION_NUM >= 0x070f06
 	if (flags & JSON_RPC_LONGPOLL)
@@ -519,6 +525,8 @@ json_t *json_rpc_call(CURL *curl, const char *url,
 			*curl_err = CURLE_OK;
 		goto err_out;
 	}
+
+	printf("got the curl\n");
 
 	/* If X-Stratum was found, activate Stratum */
 	if (want_stratum && hi.stratum_url &&
@@ -1521,6 +1529,7 @@ err_out:
 json_t* json_rpc2_call_recur(CURL *curl, const char *url, const char *userpass,
 	json_t *rpc_req, int *curl_err, int flags, int recur)
 {
+  printf("in json rpc2 call recur\n");
 	if(recur >= 5) {
 		if(opt_debug)
 			applog(LOG_DEBUG, "Failed to call rpc command after %i tries", recur);
@@ -1529,15 +1538,17 @@ json_t* json_rpc2_call_recur(CURL *curl, const char *url, const char *userpass,
 	if(!strcmp(rpc2_id, "")) {
 		if(opt_debug)
 			applog(LOG_DEBUG, "Tried to call rpc2 command before authentication");
-		return NULL;
+		//return NULL;
 	}
 	json_t *params = json_object_get(rpc_req, "params");
 	if (params) {
+	  printf("have params\n");
 		json_t *auth_id = json_object_get(params, "id");
 		if (auth_id) {
 			json_string_set(auth_id, rpc2_id);
 		}
 	}
+	printf("do json_rpc_call\n");
 	json_t *res = json_rpc_call(curl, url, userpass, json_dumps(rpc_req, 0),
 			curl_err, flags | JSON_RPC_IGNOREERR);
 	if(!res) goto end;
@@ -2493,3 +2504,13 @@ void print_hash_tests(void)
    return logValue;
  }
  
+ uint16_t log2_floor(uint32_t n) {
+   if (n==0) return 0;
+   uint16_t logValue = 0;
+   n >>= 1;
+   while (n) {
+     logValue++;
+     n >>= 1;
+   }
+   return logValue;
+ }

@@ -133,7 +133,7 @@ endif
 cpuminer_LDFLAGS	= @LDFLAGS@
 cpuminer_LDADD	= @LIBCURL@ @JANSSON_LIBS@ @PTHREAD_LIBS@ @WS2_LIBS@
 cpuminer_CPPFLAGS = @LIBCURL_CPPFLAGS@ $(ALL_INCLUDES)
-cpuminer_CFLAGS   = -Wno-pointer-sign -Wno-pointer-to-int-cast $(disable_flags)
+cpuminer_CFLAGS   = -Wno-pointer-sign -Wno-pointer-to-int-cast $(disable_flags) -g
 
 if HAVE_WINDOWS
 cpuminer_CFLAGS += -Wl,--stack,10485760

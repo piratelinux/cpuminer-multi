@@ -86,6 +86,11 @@ typedef uint64_t state_t[25];
 
 int keccak(const uint8_t *in, int inlen, uint8_t *md, int mdlen)
 {
+  /*  printf("do keccak mdlen %d in =\n",mdlen);
+  for (int i=0; i<inlen; i++) {
+    printf("%02x",((unsigned char *)in)[i]);
+  }
+  printf("\n");*/
     state_t st;
     uint8_t temp[144];
     int i, rsiz, rsizw;

@@ -199,10 +199,10 @@ bool want_longpoll = false; //tst
 bool have_longpoll = false;
 bool have_gbt = true;
 bool allow_getwork = true;
-bool want_stratum = true;
+bool want_stratum = false;
 bool have_stratum = false;
 bool opt_stratum_stats = false;
-bool allow_mininginfo = true;
+bool allow_mininginfo = false;
 bool use_syslog = false;
 bool use_colors = true;
 static bool opt_background = false;
@@ -230,6 +230,7 @@ char *rpc_userpass_aux;
 char *rpc_user, *rpc_pass;
 char *short_url = NULL;
 static unsigned char pk_script[25] = { 0 };
+static char monero_address[96] = { 0 };
 static unsigned char pk_script_aux[34] = { 0 };
 static size_t pk_script_size = 0;
 static size_t pk_script_aux_size = 0;
@@ -744,6 +745,7 @@ uchar** par_cbmb_lp = 0;
 size_t par_cbmb_size = 0;
 size_t par_cbmb_lp_size = 0;
 bool lp = false;
+char * tx_blob = 0;
 
 static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 {
@@ -762,6 +764,187 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	bool version_reduce = false;
 	json_t *tmp, *txa;
 	bool rc = false;
+
+	if (jsonrpc_2 && opt_algo == ALGO_CRYPTONIGHT) {
+	  int i = 0;
+	  const int xmr_res = 40;
+	  printf("decode rpc2 cryptonight template\n");
+	  const char * header = json_string_value(json_object_get(val, "blockhashing_blob"));
+	  //const char * header = "0808a2a4b1d7051737f36c1a60b8ef470bf744ee276da6f2d1c747fe7f6b1d2f0c67a010c78c7600000000d479f4bf49eec6faf09d01a35f348bc4f33ea87e28d0372af36e7f155c23f8a303";
+	  const char * block = json_string_value(json_object_get(val, "blocktemplate_blob"));
+	  //const char * block = "0808a2a4b1d7051737f36c1a60b8ef470bf744ee276da6f2d1c747fe7f6b1d2f0c67a010c78c760000000002aee94201fff2e842018aa192c4a6e601026234bbecc38e58c294fd3f8c742e6947f9ddd86d629e90a03def74deadfdc5764b01d26e3b6da4d83026d1071d8d5d3b977f2ff632ddec484912bd177936a5c8779e02280000000000000000000000000000000000000000000000000000000000000000000000000000000000020118c126af8560811ee8230249d61b7aeaf15637a7fec270a905558a552d9a8098a66a745355a0fdde528a403d8c415c284477baf7d1f78635970a38f2bba7d8";
+	  const int reserved_offset = json_integer_value(json_object_get(val,"reserved_offset"));
+	  printf("header (%d) = %s\n", strlen(header), header);
+	  printf("block (%d) = %s\n",strlen(block), block);
+	  printf("reserved_offset = %d\n",reserved_offset);
+	  cbtx_size = reserved_offset-43+xmr_res;
+	  cbtx = (uchar*) malloc(cbtx_size);
+	  if (cbtx_size < 60 || !hex2bin(cbtx,block+43*2,cbtx_size)) {
+	    //if (cbtx_size < 60 || !hex2bin(cbtx,"0281e94201ffc5e84201daeec8fea1e60102a82474cb583e98de21a5afa9a14626b6fe40e302c31900ac2f6f1604922337db2101706120000d3b38e3f6e31bb3e2bcc87f46ec663b5e90d38d9b68a49a06e217c4",cbtx_size)) {
+	    applog(LOG_ERR, "JSON invalid coinbasetxn");
+	    goto out;
+	  }
+	  printf("aux_hash = %s\n",aux_hash);
+	  hex2bin(cbtx+reserved_offset-43,aux_hash,40);
+	  printf("cbtx=\n");
+	  for (int i=0;i<cbtx_size;i++) {
+	    printf("%02x",cbtx[i]);
+	  }
+	  printf("\n");
+	  uchar * n_us = malloc(1);
+	  hex2bin(n_us,header+2*75,1);
+	  printf("n_us = %u\n",*n_us);
+	  n = *n_us;
+	  free(n_us);
+	  printf("n=%d\n",n);
+	  /* generate merkle root */
+	  uchar * cbtx_md = malloc(200);
+	  keccak(cbtx,cbtx_size,cbtx_md,200);
+	  hex2bin(cbtx_md+32,"bc36789e7a1e281436464229828f817d6612f7b477d66591ff96a9e064bcc98a",32);
+	  hex2bin(cbtx_md+64,"0000000000000000000000000000000000000000000000000000000000000000",32);
+	  keccak(cbtx_md,96,cbtx_md,200);
+	  printf("cbtx hash\n");
+	  for (i=0;i<32;i++) {
+	    printf("%02x",cbtx_md[i]);
+	  }
+	  printf("\n");
+	  printf("cbtx_size = %d\n",cbtx_size);
+	  int cbmb_cap = log2_ceil(n);
+	  int m = 1 << (log2_floor(n));
+	  printf("m=%d\n",m);
+	  printf("n=%d calloc\n",n);
+	  uchar ** txs = malloc(n*sizeof(uchar*));
+	  merkle_tree = (uchar(*)[32]) calloc(((4*m) & ~1), 32);
+	  txs[0] = malloc(32);
+	  memcpy(txs[0],cbtx_md,32);
+	  for (i = 1; i < n; i++) {
+	    txs[i] = malloc(32);
+	    hex2bin(txs[i],block+2*(43+cbtx_size+2+32*(i-1)),32);
+	    printf("txs[%d] =\n",i);
+	    for (int j=0;j<32;j++) {
+	      printf("%02x",txs[i][j]);
+	    }
+	    printf("\n");
+	  }
+	  par_cbmb_size = 0;
+	  if (lp) {
+	    par_cbmb_lp = malloc(cbmb_cap*sizeof(uchar*));
+	  }
+	  else {
+	    par_cbmb = malloc(cbmb_cap*sizeof(uchar*));
+	  }
+	  printf("n=%d par_cbmb_cap = %lu\n",n,cbmb_cap);
+	  if (!aux && n>1) {
+	    par_cbmb[0] = malloc(32);
+	    memcpy(par_cbmb[0],txs[1],32);
+	    printf("par_cbmb[0] =\n");
+	    for (i=0;i<32;i++) {
+	      printf("%02x",par_cbmb[0][i]);
+	    }
+	    printf("\n");
+	  }
+	  int i_cbmb = 1;
+
+	  for (i=6*m-2*n;i<=4*m-1;i++) {
+	    memcpy(merkle_tree[i],txs[i-4*m+n],32);
+	    printf("merkle_tree[%d] =\n",i);
+	    for (int j=0;j<32;j++) {
+	      printf("%02x",merkle_tree[i][j]);
+	    }
+	    printf("\n");
+	  }
+
+	  for (i=m; i<=3*m-n-1; i++) {
+	    memcpy(merkle_tree[i],txs[i-m],32);
+	    printf("merkle_tree[%d] =\n",i);
+	    for (int j=0;j<32;j++) {
+	      printf("%02x",merkle_tree[i][j]);
+	    }
+	    printf("\n");
+	  }
+
+	  i=2*m-1;
+	  while (i>0) {
+	    if (i>m-1 && i<3*m-n) {
+	      i=m-1;
+	      continue;
+	    }
+	    uchar md[200];
+	    keccak(merkle_tree[2*i],64,md,200);
+	    memcpy(merkle_tree[i],md,32);
+	    printf("merkle_tree[%d] =\n",i);
+	    for (int j=0;j<32;j++) {
+	      printf("%02x",merkle_tree[i][j]);
+	    }
+	    printf("\n");
+	    int i_powfloor = 1 << (log2_floor(n));
+	    if (i==i_powfloor+1) {
+	      par_cbmb[i_cbmb] = malloc(32);
+	      memcpy(par_cbmb[i_cbmb],merkle_tree[i],32);
+	      printf("added merkle tree to par_cbmb %u\n",i_cbmb);
+	      i_cbmb++;
+	    }
+	    i--;
+	  }
+
+	  /*
+	  while (n > 1) {
+	    i_cbmb++;
+	    printf("i_cbmb=%d\n",i_cbmb);
+	    if (n % 2) {
+	      printf("copy merkle tree %d to merkle tree %d\n",n-1,n);
+	      memcpy(merkle_tree[n], merkle_tree[n-1], 32);
+	      ++n;
+	    }
+	    n /= 2;
+	    for (i = 0; i < n; i++) {
+	      uchar md[200];
+	      printf("i=%d\n",i);
+	      keccak(merkle_tree[2*i], 64, md, 200);
+	      memcpy(merkle_tree[i],md,32);
+	      printf("merkle_tree[%d] =\n",i);
+	      for (int j=0;j<32;j++) {
+		printf("%02x",merkle_tree[i][j]);
+	      }
+	      printf("\n");
+	      /*	      if (i==1 && !aux) {
+		par_cbmb[i_cbmb] = malloc(32);
+		memcpy(par_cbmb[i_cbmb],merkle_tree[i],32);
+		printf("added merkle tree to par_cbmb %u\n",i_cbmb);
+		for (int j=0; j<32; j++) {
+		  printf("%02x",par_cbmb[i_cbmb][j]);
+		}
+		printf("\n");
+		}*/
+	  //  }
+	  //}
+	  hex2bin(work->data,header,43);
+	  memcpy((uchar*)work->data+43,merkle_tree[1],32);
+	  ((uchar*)work->data)[75] = n;
+	  printf("work->data = \n");
+	  for (i=0;i<76;i++) {
+	    printf("%02x",((uchar*)work->data)[i]);
+	  }
+	  printf("\n");
+
+	  if (tx_blob) free(tx_blob);
+	  tx_blob = malloc(strlen(block)+1);
+	  strcpy(tx_blob,block+43*2);
+	  memcpy(tx_blob+2*(reserved_offset-43),aux_hash,80);
+	  printf("tx_blob= %s\n",tx_blob);
+	  
+	  ((uchar*)target)[0] = 0;
+	  ((uchar*)target)[1] = 0;
+	  for (i=2;i<32;i++) {
+	    ((uchar*)target)[i] = 0xff;
+	  }
+	  for (i = 0; i < ARRAY_SIZE(work->target); i++) {
+	    work->target[7 - i] = be32dec(target + i);
+	  }
+	  
+	  rc = true;
+	  goto out;
+	}
 
 	tmp = json_object_get(val, "mutable");
 	if (tmp && json_is_array(tmp)) {
@@ -1210,11 +1393,12 @@ static bool gab_work_decode(const json_t *val, struct work *work) {
   
   if (unlikely(!jobj_binary(val, "target", target, sizeof(target)))) {
     applog(LOG_ERR, "JSON invalid target");
+    printf("no target goto outgab\n");
     goto outgab;
   }
 
   int i = 0;
-  for (i = 0; i < ARRAY_SIZE(work->target); i++) {
+  for (i = 0; i < 8; i++) {
     aux_target[i] = target[i];
   }
 
@@ -1236,6 +1420,7 @@ static bool gab_work_decode(const json_t *val, struct work *work) {
   rc = true;
   
   outgab:
+  printf("leave gab decode\n");
   return rc;  
   
 }
@@ -1426,7 +1611,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			goto out;
 		}
 
-	} else if (work->txs) { /* gbt */
+	} else if (work->txs || tx_blob) { /* gbt */
 	  printf("have work->txs\n");
 		char data_str[2 * sizeof(work->data) + 1];
 		char *req;
@@ -1435,6 +1620,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			be32enc(work->data + i, work->data[i]);
 		int header_len = 80;
 		if (opt_algo == ALGO_EQUIHASH) header_len = 1487;
+		if (opt_algo == ALGO_CRYPTONIGHT) header_len = 76;
 		bin2hex(data_str, (unsigned char *)work->data, header_len);
 
 		printf("best_hash= ");
@@ -1452,7 +1638,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		}
 		printf("\n");
 
-		if (fulltest(best_hash,par_target)) {
+		if (true||fulltest(best_hash,par_target)) {
 		  printf("submit to parent chain\n");
 		  if (work->workid) {
 		    char *params;
@@ -1466,13 +1652,27 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			    data_str, work->txs, params);
 		    free(params);
 		  } else {
-		    req = (char*) malloc(128 + 2 * header_len + strlen(work->txs));
-		    sprintf(req,
-			    "{\"method\": \"submitblock\", \"params\": [\"%s%s\"], \"id\":4}\r\n",
-			    data_str, work->txs);
+		    if (jsonrpc_2) {
+		      printf("submitblock jsonrpc_2\n");
+		      req = (char*) malloc(strlen(tx_blob)+400);
+		      char header [43*2];
+		      bin2hex(header,work->data,43);
+		      sprintf(req,"{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"submitblock\",\"params\":{\"data\":\"%s\"}}\r\n",header,tx_blob);
+		    }
+		    else {
+		      req = (char*) malloc(128 + 2 * header_len + strlen(work->txs));
+		      sprintf(req,
+			      "{\"method\": \"submitblock\", \"params\": [\"%s%s\"], \"id\":4}\r\n",
+			      data_str, work->txs);
+		    }
 		  }
 		  printf("req = %s\n",req);
-		  val = json_rpc_call(curl, rpc_url, rpc_userpass, req, NULL, 0);
+		  if (jsonrpc_2) {
+		    val = json_rpc2_call(curl, rpc_url, rpc_userpass, req, &err, 0);
+		  }
+		  else {
+		    val = json_rpc_call(curl, rpc_url, rpc_userpass, req, NULL, 0);
+		  }
 		  //submit aux block todo
 		  free(req);
 		  if (unlikely(!val)) {
@@ -1506,7 +1706,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		    printf("%02x",par_cbtx_cur[i]);
 		  }
 		  printf("\n");
-		  char data_str_aux[2 * sizeof(work_aux->data) + 1 + 2*par_cbtx_size+64+2*par_cbmb_size*32+4];
+		  char data_str_aux[2 * sizeof(work_aux->data) + 1 + 2*par_cbtx_size+64+2*par_cbmb_size*32+6];
 		  printf("par_cbmb (%d) =\n",par_cbmb_cur_size);
 		  for (i=0;i<par_cbmb_cur_size;i++) {
 		    for (int j=0;j<32;j++) {
@@ -1518,7 +1718,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		  //bool rca = gbt_work_decode(json_object_get(val, "result"), work_aux, true);
 		  /*		  for (i = 0; i < ARRAY_SIZE(work_aux->data); i++)
 				  be32enc(work_aux->data + i, work_aux->data[i]);*/
-		  if (opt_algo == ALGO_EQUIHASH) {
+		  if (opt_algo == ALGO_EQUIHASH || opt_algo == ALGO_CRYPTONIGHT) {
+		    printf("equihash or cryptonight\n");
 		    //bin2hex(data_str_aux, (unsigned char *)work_aux->data, 141);
 		    sprintf(data_str_aux,"%02x",(unsigned char)par_cbtx_cur_size);
 		    //sprintf(data_str_aux+2*141+2,"%04x",bswap_16(par_cbtx_size));
@@ -1528,6 +1729,9 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		    for (i=0;i<par_cbmb_cur_size;i++) {
 		      bin2hex(data_str_aux+2+2*par_cbtx_cur_size+64+2+i*64,par_cbmb_cur[i],32);
 		    }
+		    if (opt_algo == ALGO_CRYPTONIGHT) {
+		      sprintf(data_str_aux+2+2*par_cbtx_cur_size+64+2+(par_cbmb_cur_size)*64,"%02x",76);
+		    }						       
 		  }
 		  else {
 		    //bin2hex(data_str_aux, (unsigned char *)work_aux->data, header_len);
@@ -1556,6 +1760,9 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		    memcpy(aux_hash_trimmed+2*i,aux_hash+2*i,2);
 		  }
 		  aux_hash_trimmed[64] = '\0';
+		  printf("submitting aux with aux_hash_trimmed=%s\n",aux_hash_trimmed);
+		  printf("data_str_aux=%s\n",data_str_aux);
+		  printf("data_str=%s\n",data_str);
 		  
 		  req = (char*) malloc(300 + 2 * sizeof(work_aux->data) + 1 + 2*par_cbtx_cur_size + 64 + par_cbmb_cur_size*64+strlen(data_str)+4);
 		  sprintf(req,
@@ -1704,7 +1911,8 @@ static const char *gab_req =
 	"{\"method\": \"getauxblock\", \"params\": [], \"id\":0}\r\n";
 
 static bool get_upstream_work(CURL *curl, struct work *work, struct work *work_aux)
-{ 
+{
+  printf("in get upstream work\n");
 	json_t *val;
 	json_t* val_aux;
 	json_t* val_auxgbt;
@@ -1717,20 +1925,25 @@ static bool get_upstream_work(CURL *curl, struct work *work, struct work *work_a
 start:
 	gettimeofday(&tv_start, NULL);
 
-	if (jsonrpc_2) {
-		char s[128];
-		snprintf(s, 128, "{\"method\": \"getjob\", \"params\": {\"id\": \"%s\"}, \"id\":1}\r\n", rpc2_id);
-		val = json_rpc2_call(curl, rpc_url, rpc_userpass, s, NULL, 0);
+	printf("note gbt req: %s\n",gbt_req);
+	if (jsonrpc_2 && opt_algo == ALGO_CRYPTONIGHT) {
+	  printf("do json2 request\n");
+		char s[500];
+		sprintf(s,"{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"getblocktemplate\",\"params\":{\"wallet_address\":\"%s\",\"reserve_size\":40}}\r\n",monero_address);
+		val = json_rpc2_call(curl, rpc_url, rpc_userpass, s, &err, 0);
+		printf("got val\n");
 	} else {
 		val = json_rpc_call(curl, rpc_url, rpc_userpass,
 		                    have_gbt ? gbt_req : getwork_req,
 		                    &err, have_gbt ? JSON_RPC_QUIET_404 : 0);
-
-		if (rpc_url_aux) {
-		  val_aux = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, gab_req, &err_aux, JSON_RPC_QUIET_404);
-		  val_auxgbt = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, gbt_req, &err_auxgbt, JSON_RPC_QUIET_404);
-		}
 	}
+
+	if (rpc_url_aux) {
+	  val_aux = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, gab_req, &err_aux, JSON_RPC_QUIET_404);
+	  printf("got val aux\n");
+	  //val_auxgbt = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, gbt_req, &err_auxgbt, JSON_RPC_QUIET_404);
+	}
+
 	gettimeofday(&tv_end, NULL);
 
 	if (have_stratum) {
@@ -1776,10 +1989,12 @@ start:
 	    strcat(aux_hash,"0100000000000000");*/
 	    //printf("new aux_hash = %s\n",aux_hash);
 	    //memcpy(aux_target,work_aux->target,32);
+	    if (!rc) printf("bad rc after gab decode\n");
 	  }
 	  printf("do gbt work decode par\n");
 	  lp = false;
 	  rc = gbt_work_decode(json_object_get(val, "result"), work, false);
+	  if (!rc) printf("bad rc after gbt decode\n");
 	  memcpy(par_target,work->target,32);
 	  printf("work target: ");
 	  for (int i=0; i<32; i++) {
@@ -1810,7 +2025,8 @@ start:
 	json_decref(val);
 
 	// store work height in solo
-	get_mininginfo(curl, work);
+	//printf("do getmininginfo\n");
+	//get_mininginfo(curl, work);
 
 	return rc;
 }
@@ -1835,6 +2051,7 @@ static void workio_cmd_free(struct workio_cmd *wc)
 
 static bool workio_get_work(struct workio_cmd *wc, CURL *curl)
 {
+  printf("in workio_get_work\n");
 	struct work *ret_work;
 	struct work *ret_work_aux;
 	int failures = 0;
@@ -1863,6 +2080,7 @@ static bool workio_get_work(struct workio_cmd *wc, CURL *curl)
 			opt_fail_pause);
 		sleep(opt_fail_pause);
 	}
+	printf("got upstream work\n");
 
 	/* send work to requesting thread */
 	if (!tq_push(wc->thr->q, ret_work))
@@ -1965,6 +2183,7 @@ bool rpc2_workio_login(CURL *curl)
 
 static void *workio_thread(void *userdata)
 {
+  printf("in workio_thread\n");
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	CURL *curl;
 	bool ok = true;
@@ -1976,7 +2195,7 @@ static void *workio_thread(void *userdata)
 	}
 
 	if(jsonrpc_2 && !have_stratum) {
-		ok = rpc2_workio_login(curl);
+	  //ok = rpc2_workio_login(curl); tmp
 	}
 
 	while (ok) {
@@ -2301,6 +2520,7 @@ static bool wanna_mine(int thr_id)
 
 static void *miner_thread(void *userdata)
 {
+  printf("in miner thread\n");
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	int thr_id = mythr->id;
 	struct work work;
@@ -2637,7 +2857,12 @@ static void *miner_thread(void *userdata)
 			rc = scanhash_cryptolight(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_CRYPTONIGHT:
-		  rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done);
+		  if (jsonrpc_2) {
+		    rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done, true, aux_target, best_hash);
+		  }
+		  else {
+		    rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done, false, aux_target, best_hash);
+		  }
 		  break;
 		case ALGO_DECRED:
 			rc = scanhash_decred(thr_id, &work, max_nonce, &hashes_done);
@@ -2858,6 +3083,7 @@ void restart_threads(void)
 
 static void *longpoll_thread(void *userdata)
 {
+  printf("in longpoll_thread\n");
 	struct thr_info *mythr = (struct thr_info*) userdata;
 	CURL *curl = NULL;
 	char *copy_start, *hdr_path = NULL, *lp_url = NULL;
@@ -3640,6 +3866,12 @@ void parse_arg(int key, char *arg)
 	    //printf("size of pk script = %lu\n",pk_script_size);
 	    curl_easy_cleanup(curl);
 	  }
+	  else if (opt_algo == ALGO_CRYPTONIGHT && strlen(arg)==95) {
+	    printf("copy monero address\n");
+	    strcpy(monero_address,arg);
+	    jsonrpc_2 = true;
+	    break;
+	  }
 	  else {
 	    pk_script_size = address_to_script(pk_script, sizeof(pk_script), arg, 0);
 	  }
@@ -4088,6 +4320,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (opt_api_listen) {
+	  printf("start api thread\n");
 		/* api thread */
 		api_thr_id = opt_n_threads + 3;
 		thr = &thr_info[api_thr_id];

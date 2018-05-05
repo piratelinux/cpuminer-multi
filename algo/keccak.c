@@ -5,6 +5,18 @@
 
 #include "sha3/sph_keccak.h"
 
+extern void keccakhashlen(void * state, const void *input, int len) {
+  printf("do keccakhashlen %d\n",len);
+  sph_keccak256_context ctx_keccak;
+  uint32_t hash[32];
+
+  sph_keccak256_init(&ctx_keccak);
+  sph_keccak256 (&ctx_keccak,input, len);
+  sph_keccak256_close(&ctx_keccak, hash);
+
+  memcpy(state, hash, 32);
+}
+
 extern void keccakhash(void *state, const void *input)
 {
     sph_keccak256_context ctx_keccak;
