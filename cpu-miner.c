@@ -843,7 +843,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	    }
 	    printf("\n");
 	  }
-	  int i_cbmb = 1;
+	  int i_cbmb = 0;
 
 	  for (i=6*m-2*n;i<=4*m-1;i++) {
 	    memcpy(merkle_tree[i],txs[i-4*m+n],32);
@@ -885,6 +885,13 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	      i_cbmb++;
 	    }
 	    i--;
+	  }
+
+	  if (lp) {
+	    par_cbmb_lp_size = i_cbmb;
+	  }
+	  else {
+	    par_cbmb_size = i_cbmb;
 	  }
 
 	  /*
@@ -941,6 +948,24 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	  for (i = 0; i < ARRAY_SIZE(work->target); i++) {
 	    work->target[7 - i] = be32dec(target + i);
 	  }
+
+	  if (lp) {
+	    if (par_cbtx_lp_size) free(par_cbtx_lp);
+	    par_cbtx_lp = malloc(cbtx_size);
+	    memcpy(par_cbtx_lp,cbtx,cbtx_size);
+	    par_cbtx_lp_size = cbtx_size;
+	  }
+	  else {
+	    if (par_cbtx_size) free(par_cbtx);
+	    par_cbtx = malloc(cbtx_size);
+	    memcpy(par_cbtx,cbtx,cbtx_size);
+	    par_cbtx_size = cbtx_size;
+	  }
+	  printf("par_cbtx = (%d)\n",par_cbtx_size);
+	  for (int i=0; i<par_cbtx_size; i++) {
+	    printf("%02x",par_cbtx[i]);
+	  }
+	  printf("\n");
 	  
 	  rc = true;
 	  goto out;
@@ -1544,11 +1569,11 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 			bin2hex(noncestr, (const unsigned char *)work->data + 39, 4);
 			switch(opt_algo) {
-			case ALGO_CRYPTOLIGHT:
+			  /*case ALGO_CRYPTOLIGHT:
 				cryptolight_hash(hash, work->data, 76);
 				break;
 			case ALGO_CRYPTONIGHT:
-				cryptonight_hash(hash, work->data, 80);
+			cryptonight_hash(hash, work->data, 80);*/
 			default:
 				break;
 			}
@@ -1616,8 +1641,10 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		char data_str[2 * sizeof(work->data) + 1];
 		char *req;
 
-		for (i = 0; i < ARRAY_SIZE(work->data); i++)
-			be32enc(work->data + i, work->data[i]);
+		if (!(opt_algo==ALGO_CRYPTONIGHT && tx_blob)) {
+		  for (i = 0; i < ARRAY_SIZE(work->data); i++)
+		    be32enc(work->data + i, work->data[i]);
+		}
 		int header_len = 80;
 		if (opt_algo == ALGO_EQUIHASH) header_len = 1487;
 		if (opt_algo == ALGO_CRYPTONIGHT) header_len = 76;
@@ -1655,9 +1682,9 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		    if (jsonrpc_2) {
 		      printf("submitblock jsonrpc_2\n");
 		      req = (char*) malloc(strlen(tx_blob)+400);
-		      char header [43*2];
+		      char header [43*2+1];
 		      bin2hex(header,work->data,43);
-		      sprintf(req,"{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"submitblock\",\"params\":{\"data\":\"%s\"}}\r\n",header,tx_blob);
+		      sprintf(req,"{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"submitblock\",\"params\":[\"%s%s\"]}\r\n",header,tx_blob);
 		    }
 		    else {
 		      req = (char*) malloc(128 + 2 * header_len + strlen(work->txs));
@@ -1668,7 +1695,9 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		  }
 		  printf("req = %s\n",req);
 		  if (jsonrpc_2) {
+		    printf("do json rpc2 call\n");
 		    val = json_rpc2_call(curl, rpc_url, rpc_userpass, req, &err, 0);
+		    printf("did json rpc2 call\n");
 		  }
 		  else {
 		    val = json_rpc_call(curl, rpc_url, rpc_userpass, req, NULL, 0);
@@ -1677,7 +1706,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		  free(req);
 		  if (unlikely(!val)) {
 		    applog(LOG_ERR, "submit_upstream_work json_rpc_call failed");
-		    goto out;
+		    //goto out;
 		  }
 		}
 		uchar * par_cbtx_cur = 0;
@@ -1724,14 +1753,13 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		    sprintf(data_str_aux,"%02x",(unsigned char)par_cbtx_cur_size);
 		    //sprintf(data_str_aux+2*141+2,"%04x",bswap_16(par_cbtx_size));
  		    bin2hex(data_str_aux+2, (unsigned char *)par_cbtx_cur,par_cbtx_cur_size);
-		    bin2hex(data_str_aux+2+2*par_cbtx_cur_size, (unsigned char *)best_hash,32);
+		    uchar md[200];
+		    keccak(work->data,76,md,200);
+		    bin2hex(data_str_aux+2+2*par_cbtx_cur_size,md,32);
 		    sprintf(data_str_aux+2+2*par_cbtx_cur_size+64,"%02x",(unsigned char)par_cbmb_cur_size);
 		    for (i=0;i<par_cbmb_cur_size;i++) {
 		      bin2hex(data_str_aux+2+2*par_cbtx_cur_size+64+2+i*64,par_cbmb_cur[i],32);
 		    }
-		    if (opt_algo == ALGO_CRYPTONIGHT) {
-		      sprintf(data_str_aux+2+2*par_cbtx_cur_size+64+2+(par_cbmb_cur_size)*64,"%02x",76);
-		    }						       
 		  }
 		  else {
 		    //bin2hex(data_str_aux, (unsigned char *)work_aux->data, header_len);
@@ -1742,6 +1770,10 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		    }
 		  }
 		  strcat(data_str_aux,"000000000000000000");
+		  if (opt_algo == ALGO_CRYPTONIGHT) {
+		    strcat(data_str_aux,"4c");
+		    //sprintf(data_str_aux+2+2*par_cbtx_cur_size+64+2+(par_cbmb_cur_size)*64,"%02x",76);
+		  }
 		  
 		  //unsigned char hash_test[32];
 		  //sha256d(hash_test,(unsigned char *)work_aux->data,141);
@@ -1812,14 +1844,14 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			bin2hex(noncestr, (const unsigned char *)work->data + 39, 4);
 
 			switch(opt_algo) {
-			case ALGO_CRYPTOLIGHT:
+			  /*case ALGO_CRYPTOLIGHT:
 				cryptolight_hash(hash, work->data, 76);
 				break;
 			case ALGO_CRYPTONIGHT:
-				cryptonight_hash(hash, work->data, 80);
+			cryptonight_hash(hash, work->data, 80);**/
 			default:
 				break;
-			}
+				}
 			hashhex = abin2hex(&hash[0], 32);
 			snprintf(s, JSON_BUF_LEN,
 					"{\"method\": \"submit\", \"params\": "
