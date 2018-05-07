@@ -23,6 +23,8 @@ union cn_slow_hash_state {
 };
 #pragma pack(pop)
 
+#define USE_LOBOTOMIZED_AES
+
 #ifdef USE_LOBOTOMIZED_AES
 
 struct cryptonight_ctx {

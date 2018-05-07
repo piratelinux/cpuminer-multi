@@ -207,39 +207,15 @@ static inline void xor_blocks(uint8_t *restrict a, const uint8_t *restrict b) {
 
 int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int inlen, struct cryptonight_ctx *restrict ctx, int variant) {
 
-  printf("in cryptonight hash ctx variant %d inlen %d\n",variant,inlen);
-  for (int i=0; i<inlen; i++) {
-    printf("%02x",((unsigned char *)input)[i]);
-  }
-  printf("\n");
-
   ctx->aes_ctx = (oaes_ctx*) oaes_alloc();
   size_t i, j;
-  
-  printf("hash state 1\n");
-  for (int i=0; i<400; i++) {
-    printf("%02x",((uint8_t*)&ctx->state)[i]);
-  }
-  printf("\n");
   
     //hash_process(&ctx->state.hs, (const uint8_t*) input, 76);
     keccak((const uint8_t *)input, inlen, &ctx->state.hs, 200);
     memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
 
-    printf("hash state 1b\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
-
     VARIANT1_INIT();
 
-    printf("hash state 2\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
-    
     oaes_key_import_data(ctx->aes_ctx, ctx->state.hs.b, AES_KEY_SIZE);
     
     for(i = 0; likely(i < MEMORY); i += INIT_SIZE_BYTE)
@@ -258,24 +234,11 @@ int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int 
 		memcpy(&ctx->long_state[i], ctx->text, INIT_SIZE_BYTE);
 	}
 
-    printf("hash state 3\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
-    
     for (i = 0; i < 2; i++) 
       {
 	((uint64_t *)(ctx->a))[i] = ((uint64_t *)ctx->state.k)[i] ^  ((uint64_t *)ctx->state.k)[i+4];
 	((uint64_t *)(ctx->b))[i] = ((uint64_t *)ctx->state.k)[i+2] ^  ((uint64_t *)ctx->state.k)[i+6];
       }
-
-    printf("hash state 4\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
-	
 
     //xor_blocks_dst(&ctx->state.k[0], &ctx->state.k[32], ctx->a);
     //xor_blocks_dst(&ctx->state.k[16], &ctx->state.k[48], ctx->b);
@@ -299,20 +262,8 @@ int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int 
         mul_sum_xor_dst(ctx->b, ctx->a, &ctx->long_state[((uint64_t *)(ctx->b))[0] & 0x1FFFF0], variant, tweak1_2);
     }
 
-    printf("hash state 5\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
-    
     memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
     oaes_key_import_data(ctx->aes_ctx, &ctx->state.hs.b[32], AES_KEY_SIZE);
-
-    printf("hash state 6\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
 
     for(i = 0; likely(i < MEMORY); i += INIT_SIZE_BYTE)
     {
@@ -337,30 +288,14 @@ int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int 
 			SubAndShiftAndMixAddRoundInPlace(&ctx->text[0x70], &ctx->aes_ctx->key->exp_data[j << 4]);
 		}
 	}
-
-    printf("hash state 7\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
     
     memcpy(ctx->state.init, ctx->text, INIT_SIZE_BYTE);
     //hash_permutation(&ctx->state.hs);
     keccakf(&ctx->state.hs, 24);
     /*memcpy(hash, &state, 32);*/
 
-    printf("hash state 10\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
-
     extra_hashes[ctx->state.hs.b[0] & 3](&ctx->state, 200, output);
-    printf("output\n");
-    for (int i=0; i<200; i++) {
-      printf("%02x",((unsigned char *)output)[i]);
-    }
-    printf("\n");
+
     oaes_free((OAES_CTX **) &ctx->aes_ctx);
     return 1;
 }
@@ -421,14 +356,14 @@ int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint
 		  if (xmr) {
 		    be32enc(&((unsigned char *)pdata)[39],nonce);
 		    *nonceptr = ++n;
-		    /*const char * input_hex = "8519e039172b0d70e5ca7b3383d6b3167315a422747b73f019cf9528f0fde341fd0f2a63030ba6450525cf6de31837669af6f1df8131faf50aaab8d3a7405589";
+		    /*const char * input_hex = "37a636d7dafdf259b7287eddca2f58099e98619d2f99bdb8969d7b14498102cc065201c8be90bd777323f449848b215d2977c92c4c1c2da36ab46b2e389689ed97c18fec08cd3b03235c5e4c62a37ad88c7b67932495a71090e85dd4020a9300";
 		    int input_len = strlen(input_hex)/2;
 		    uchar* input = malloc(input_len);
 		    for (int i=0; i<input_len; i++) {
 		      sscanf(input_hex+2*i,"%2hhx",input+i);
-		      }*/
+		      }
+		      cryptonight_hash_ctx(hash,input,input_len,ctx,1);*/
 		    cryptonight_hash_ctx(hash, pdata, 76, ctx, 1);
-		    //cryptonight_hash_ctx(hash,input,input_len,ctx,1);
 		  }
 		  else {
 		    be32enc(&endiandata[19],nonce);
@@ -437,8 +372,10 @@ int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint
 		  }
 		  char * hashhex = abin2hex((unsigned char *)hash, 32);
 		  printf("hash= %s\n",hashhex);
-		  if (unlikely(hash[7] < ptarget[7])) {
-		    if (fulltest(hash, ptarget)) {
+		  if (((uchar*)hash)[0]==0) {
+		    if (1) {
+		      //if (unlikely(hash[7] < ptarget[7])) {
+		      //if (fulltest(hash, ptarget)) {
 		      printf("good hash with input\n");
 		      for (int i=0; i<76; i++) {
 			printf("%02x",((uchar*)pdata)[i]);

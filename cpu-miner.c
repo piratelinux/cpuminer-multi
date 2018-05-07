@@ -938,13 +938,22 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	  tx_blob = malloc(strlen(block)+1);
 	  strcpy(tx_blob,block+43*2);
 	  memcpy(tx_blob+2*(reserved_offset-43),aux_hash,80);
+	  tx_blob[strlen(block)] = '\0';
 	  printf("tx_blob= %s\n",tx_blob);
+
 	  
-	  ((uchar*)target)[0] = 0;
-	  ((uchar*)target)[1] = 0;
+	  /*((uchar*)target)[0] = 0;
+	  ((uchar*)target)[1] = 0x80;
 	  for (i=2;i<32;i++) {
 	    ((uchar*)target)[i] = 0xff;
+	    }*/
+
+	  ((uchar*)target)[31] = 0;
+	  ((uchar*)target)[30] = 0x80;
+	  for (i=0;i<30;i++) {
+	    ((uchar*)target)[i] = 0xff;
 	  }
+
 	  for (i = 0; i < ARRAY_SIZE(work->target); i++) {
 	    work->target[7 - i] = be32dec(target + i);
 	  }
