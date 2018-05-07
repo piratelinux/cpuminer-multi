@@ -370,17 +370,17 @@ int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint
 		    *nonceptr = ++n;
 		    cryptonight_hash_ctx(hash, endiandata, 80, ctx, 1);
 		  }
-		  char * hashhex = abin2hex((unsigned char *)hash, 32);
-		  printf("hash= %s\n",hashhex);
-		  if (((uchar*)hash)[0]==0) {
-		    if (1) {
-		      //if (unlikely(hash[7] < ptarget[7])) {
-		      //if (fulltest(hash, ptarget)) {
+		  //if (((uchar*)hash)[0]==0) {
+		  //if (1) {
+		  if (unlikely(hash[7] < ptarget[7])) {
+		    if (fulltest(hash, ptarget)) {
 		      printf("good hash with input\n");
 		      for (int i=0; i<76; i++) {
 			printf("%02x",((uchar*)pdata)[i]);
 		      }
 		      printf("\n");
+		      char * hashhex = abin2hex((unsigned char *)hash, 32);
+		      printf("hash = %s\n",hashhex);
 		      work_set_target_ratio(work, hash);
 		      *hashes_done = n - first_nonce + 1;
 		      free(ctx);

@@ -785,6 +785,11 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	    goto out;
 	  }
 	  printf("aux_hash = %s\n",aux_hash);
+	  if (!aux_hash || strlen(aux_hash)==0) {
+	    strcpy(aux_hash,"ed80736b00e09a000205d96db19b6e4a8421f38e9b4f50ca0d2579d22f9487ff0100000000000000");
+	    printf("fix aux_hash = %s\n",aux_hash);
+	  }
+	    
 	  hex2bin(cbtx+reserved_offset-43,aux_hash,40);
 	  printf("cbtx=\n");
 	  for (int i=0;i<cbtx_size;i++) {
@@ -942,17 +947,17 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	  printf("tx_blob= %s\n",tx_blob);
 
 	  
-	  /*((uchar*)target)[0] = 0;
-	  ((uchar*)target)[1] = 0x80;
+	  ((uchar*)target)[0] = 0;
+	  ((uchar*)target)[1] = 0;
 	  for (i=2;i<32;i++) {
 	    ((uchar*)target)[i] = 0xff;
-	    }*/
+	  }
 
-	  ((uchar*)target)[31] = 0;
+	  /*((uchar*)target)[31] = 0;
 	  ((uchar*)target)[30] = 0x80;
 	  for (i=0;i<30;i++) {
 	    ((uchar*)target)[i] = 0xff;
-	  }
+	    }*/
 
 	  for (i = 0; i < ARRAY_SIZE(work->target); i++) {
 	    work->target[7 - i] = be32dec(target + i);
@@ -1810,11 +1815,11 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			  "{\"method\": \"getauxblock\", \"params\": [\"%s\",\"%s%s\"], \"id\":4}\r\n",
 			  aux_hash_trimmed,data_str_aux,data_str);
 		  printf("aux req: %s\n",req);
-		  val = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, req, NULL, 0);;
+		  //val = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, req, NULL, 0); tmp
 		  free(req);
 		  if (unlikely(!val)) {
 		    applog(LOG_ERR, "aux submit_upstream_work json_rpc_call failed");
-		    goto out;
+		    //goto out;
 		  }
 		}
 		
@@ -2012,7 +2017,8 @@ start:
 	if (have_gbt) {
 	  json_dumps(json_object_get(val,"result"),0);
 	  json_dumps(json_object_get(val_aux,"result"),0);
-	  if (work_aux) {
+	  if (work_aux && !aux_scriptsig) {
+	    aux_hash[0] = '\0';
 	    rc = gab_work_decode(json_object_get(val_aux,"result"),work_aux);
 	    //rc = gbt_work_decode(json_object_get(val_auxgbt, "result"), work_aux, true);
 	    /*for (int i = 0; i < ARRAY_SIZE(work_aux->data); i++)
