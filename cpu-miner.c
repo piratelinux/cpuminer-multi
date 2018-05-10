@@ -715,7 +715,7 @@ static bool get_mininginfo(CURL *curl, struct work *work)
 	return true;
 }
 
-#define BLOCK_VERSION_CURRENT 3
+#define BLOCK_VERSION_CURRENT 4
 
 static bool gbt_work_decode(const json_t *val, struct work *work)
 {
@@ -1086,6 +1086,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 	int i;
 	bool rc = false;
 
+	if (opt_algo == ALGO_EQUIHASH) printf("submit equihash work\n");
+
 	/* pass if the previous hash is not the current previous hash */
 	if (opt_algo != ALGO_SIA && !submit_old && memcmp(&work->data[1], &g_work.data[1], 32)) {
 		if (opt_debug)
@@ -1104,6 +1106,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 	}
 
 	if (have_stratum) {
+	  printf("have stratum\n");
 		uint32_t ntime, nonce;
 		char ntimestr[9], noncestr[9];
 
@@ -1180,6 +1183,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		}
 
 	} else if (work->txs) { /* gbt */
+
+	  if (opt_algo == ALGO_EQUIHASH) printf("submit block with work->txs equihash\n");
 	  
 		char data_str[2 * sizeof(work->data) + 1];
 		char *req;

@@ -675,7 +675,13 @@ int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_
 	      sscanf(buf+2*i,"%2hhx",full_data+140+i);
 	    }
 	    sha256d((unsigned char *)hash,full_data,1487);
+	    /*printf("hash = ");
+	    for (int i=0; i<32; i++) {
+	      printf("%02x",((uchar*)hash)[i]);
+	    }
+	    printf("\n");*/
 	    if (fulltest(hash, ptarget)) {
+	      printf("good hash \n");
 	      full_data[1487]=0;
 	      for (int i=35; i<372; i++) {
 		pdata[i] = swab32(((uint32_t *)full_data)[i]);

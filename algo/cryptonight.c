@@ -207,34 +207,14 @@ static inline void xor_blocks(uint8_t *restrict a, const uint8_t *restrict b) {
 
 int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int inlen, struct cryptonight_ctx *restrict ctx, int variant) {
 
-  printf("in cryptonight hash ctx variant %d\n",variant);
-    
     ctx->aes_ctx = (oaes_ctx*) oaes_alloc();
     size_t i, j;
-
-    printf("hash state 0\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
     
     //hash_process(&ctx->state.hs, (const uint8_t*) input, 76);
     keccak((const uint8_t *)input, inlen, &ctx->state.hs, 200);
     memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
 
-    printf("hash state 1\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
-
     VARIANT1_INIT();
-
-    printf("hash state 2\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
     
     oaes_key_import_data(ctx->aes_ctx, ctx->state.hs.b, AES_KEY_SIZE);
     
@@ -253,12 +233,6 @@ int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int 
 		}
 		memcpy(&ctx->long_state[i], ctx->text, INIT_SIZE_BYTE);
 	}
-
-    printf("hash state 3\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
     
 	for (i = 0; i < 2; i++) 
     {
@@ -266,12 +240,6 @@ int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int 
 	    ((uint64_t *)(ctx->b))[i] = ((uint64_t *)ctx->state.k)[i+2] ^  ((uint64_t *)ctx->state.k)[i+6];
     }
 
-    printf("hash state 4\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");	
-	
     //xor_blocks_dst(&ctx->state.k[0], &ctx->state.k[32], ctx->a);
     //xor_blocks_dst(&ctx->state.k[16], &ctx->state.k[48], ctx->b);
 
@@ -294,20 +262,8 @@ int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int 
         mul_sum_xor_dst(ctx->b, ctx->a, &ctx->long_state[((uint64_t *)(ctx->b))[0] & 0x1FFFF0], variant, tweak1_2);
     }
 
-    printf("hash state 5\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");    
-
     memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
     oaes_key_import_data(ctx->aes_ctx, &ctx->state.hs.b[32], AES_KEY_SIZE);
-
-    printf("hash state 6\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
     
     for(i = 0; likely(i < MEMORY); i += INIT_SIZE_BYTE)
     {
@@ -333,21 +289,11 @@ int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int 
 		}
 	}
 
-    printf("hash state 7\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");    
-    
     memcpy(ctx->state.init, ctx->text, INIT_SIZE_BYTE);
     //hash_permutation(&ctx->state.hs);
     keccakf(&ctx->state.hs, 24);
     /*memcpy(hash, &state, 32);*/
-    printf("hash state 10\n");
-    for (int i=0; i<400; i++) {
-      printf("%02x",((uint8_t*)&ctx->state)[i]);
-    }
-    printf("\n");
+
     extra_hashes[ctx->state.hs.b[0] & 3](&ctx->state, 200, output);
     oaes_free((OAES_CTX **) &ctx->aes_ctx);
     return 1;
