@@ -1241,7 +1241,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		json_decref(val);
 
 	} else {
-
+	  printf("!work->txs\n");
 		char* gw_str = NULL;
 		int data_size = 128;
 		int adata_sz;

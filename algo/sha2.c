@@ -650,7 +650,7 @@ int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_
 	uint32_t _ALIGN(128) endiandata[35];
 
 	unsigned char full_data[1488];
-	unsigned char cmd[292];
+	char cmd[292+1+64];
 	sprintf(cmd,"equisolver ");
 	for (int i=0; i<35; i++) {
 	  be32enc(&endiandata[i], pdata[i]);
@@ -660,41 +660,51 @@ int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_
 	  }
 	}
 	do {
-	  pdata[27] = ++n;
+	  pdata[27] = thr_id*100; //tmp
 	  be32enc(&endiandata[27], pdata[27]);
 	  for (int j=0; j<4; j++) {
 	    sprintf(cmd+11+27*8+2*j,"%02x",*((unsigned char *)endiandata+27*4+j));
 	    full_data[27*4+j] = *((unsigned char *)endiandata+27*4+j);
 	  }
 	  cmd[11+27*8+2*4] = 48;
-	  //printf("cmd = %s\n",cmd);
+	  strcat(cmd," ");
+	  for (int i=0; i<32; i++) sprintf(cmd+292+2*i,"%02x",((uchar*)ptarget)[i]);
+	  printf("thr %d cmd = %s\n",thr_id,cmd);
 	  FILE* equihash = popen(cmd, "r");
 	  char buf[10000];
 	  while (fgets(buf, sizeof(buf), equihash) != 0) {
-	    for (int i=0; i<1347; i++) {
-	      sscanf(buf+2*i,"%2hhx",full_data+140+i);
+	    for (int i=0; i<1487; i++) {
+	      sscanf(buf+2*i,"%2hhx",full_data+i);
 	    }
-	    sha256d((unsigned char *)hash,full_data,1487);
+	    //sha256d((unsigned char *)hash,full_data,1487);
 	    /*printf("hash = ");
 	    for (int i=0; i<32; i++) {
 	      printf("%02x",((uchar*)hash)[i]);
 	    }
 	    printf("\n");*/
-	    if (fulltest(hash, ptarget)) {
-	      printf("good hash \n");
-	      full_data[1487]=0;
-	      for (int i=35; i<372; i++) {
-		pdata[i] = swab32(((uint32_t *)full_data)[i]);
-	      }
-	      work_set_target_ratio(work, hash);
-	      *hashes_done = n - first_nonce + 1;
-	      return 1;
+	    //if (fulltest(hash, ptarget)) {
+	    printf("thr %d good hash with header\n",thr_id);
+	    sha256d((unsigned char *)hash,full_data,1487);
+	    if (!fulltest(hash, ptarget)) {
+	      printf("but test doesn't pass\n");
+	      break;
 	    }
+	    for (int i=0; i<1487; i++) printf("%02x",full_data[i]);
+	    printf("\n");
+	    full_data[1487]=0;
+	    for (int i=0; i<372; i++) {
+	      pdata[i] = swab32(((uint32_t *)full_data)[i]);
+	    }
+	    work_set_target_ratio(work, hash);
+	    *hashes_done = n - first_nonce + 1;
+	    return 1;
+	    //}
 	  }
-	  pclose(equihash);	
+	  pclose(equihash);
+	  break; //equisolver will scan
 	} while (likely(n < max_nonce && !work_restart[thr_id].restart));
 	
-	*hashes_done = n - first_nonce + 1;
-	pdata[27] = n;
+	*hashes_done = 10;
+	pdata[27] += 10;
 	return 0;
 }
