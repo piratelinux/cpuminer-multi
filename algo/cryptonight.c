@@ -303,7 +303,11 @@ int cryptonight_hash_ctx(void *restrict output, const void *restrict input, int 
 int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, bool xmr, uint32_t* target, uint32_t* best_hash)
 {
   if (xmr) {
-    printf("scanhash xmr\n");
+    printf("scanhash xmr thr %d\n",thr_id);
+    for (int i=0; i<76; i++) {
+      printf("%02x",((uchar*)work->data)[i]);
+    }
+    printf("\n");
   }
 	uint32_t _ALIGN(128) hash[HASH_SIZE / 4];
 	uint32_t _ALIGN(128) endiandata[20];

@@ -725,9 +725,9 @@ static bool get_mininginfo(CURL *curl, struct work *work)
 	return true;
 }
 
-#define BLOCK_VERSION_CURRENT 3
+#define BLOCK_VERSION_CURRENT 4
 
-char aux_hash [81];
+char aux_hash [89];
 uint32_t aux_target[8];
 uint32_t aux_version = 0;
 uint32_t aux_curtime = 0;
@@ -767,7 +767,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 
 	if (jsonrpc_2 && opt_algo == ALGO_CRYPTONIGHT) {
 	  int i = 0;
-	  const int xmr_res = 40;
+	  const int xmr_res = 44;
 	  printf("decode rpc2 cryptonight template\n");
 	  const char * header = json_string_value(json_object_get(val, "blockhashing_blob"));
 	  //const char * header = "0808a2a4b1d7051737f36c1a60b8ef470bf744ee276da6f2d1c747fe7f6b1d2f0c67a010c78c7600000000d479f4bf49eec6faf09d01a35f348bc4f33ea87e28d0372af36e7f155c23f8a303";
@@ -790,7 +790,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	    printf("fix aux_hash = %s\n",aux_hash);
 	  }
 	    
-	  hex2bin(cbtx+reserved_offset-43,aux_hash,40);
+	  hex2bin(cbtx+reserved_offset-43,aux_hash,44);
 	  printf("cbtx=\n");
 	  for (int i=0;i<cbtx_size;i++) {
 	    printf("%02x",cbtx[i]);
@@ -942,7 +942,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work, bool aux)
 	  if (tx_blob) free(tx_blob);
 	  tx_blob = malloc(strlen(block)+1);
 	  strcpy(tx_blob,block+43*2);
-	  memcpy(tx_blob+2*(reserved_offset-43),aux_hash,80);
+	  memcpy(tx_blob+2*(reserved_offset-43),aux_hash,88);
 	  tx_blob[strlen(block)] = '\0';
 	  printf("tx_blob= %s\n",tx_blob);
 
@@ -1453,13 +1453,15 @@ static bool gab_work_decode(const json_t *val, struct work *work) {
   hex2bin(aux_scriptsig,scriptsig,aux_scriptsig_size);
 
   const char * hash = json_string_value(json_object_get(val, "hash"));
-  strcpy(aux_hash,hash);
+  strcpy(aux_hash,"fabe6d6d");
+  strcat(aux_hash,hash);
   strcat(aux_hash,"0100000000000000");
 
   rc = true;
   
   outgab:
-  printf("leave gab decode\n");
+  printf("leave gab decode with aux_hash %s\n",aux_hash);
+  if (!rc) printf("gab !rc\n");
   return rc;  
   
 }
@@ -1803,7 +1805,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		  printf("\n");*/
 		  char aux_hash_trimmed [65];
 		  for (i=0;i<32;i++) {
-		    memcpy(aux_hash_trimmed+2*i,aux_hash+2*i,2);
+		    memcpy(aux_hash_trimmed+2*i,aux_hash+8+2*i,2);
 		  }
 		  aux_hash_trimmed[64] = '\0';
 		  printf("submitting aux with aux_hash_trimmed=%s\n",aux_hash_trimmed);
@@ -1815,7 +1817,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			  "{\"method\": \"getauxblock\", \"params\": [\"%s\",\"%s%s\"], \"id\":4}\r\n",
 			  aux_hash_trimmed,data_str_aux,data_str);
 		  printf("aux req: %s\n",req);
-		  //val = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, req, NULL, 0); tmp
+		  val = json_rpc_call(curl, rpc_url_aux, rpc_userpass_aux, req, NULL, 0); 
 		  free(req);
 		  if (unlikely(!val)) {
 		    applog(LOG_ERR, "aux submit_upstream_work json_rpc_call failed");
@@ -1975,7 +1977,7 @@ start:
 	if (jsonrpc_2 && opt_algo == ALGO_CRYPTONIGHT) {
 	  printf("do json2 request\n");
 		char s[500];
-		sprintf(s,"{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"getblocktemplate\",\"params\":{\"wallet_address\":\"%s\",\"reserve_size\":40}}\r\n",monero_address);
+		sprintf(s,"{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"getblocktemplate\",\"params\":{\"wallet_address\":\"%s\",\"reserve_size\":44}}\r\n",monero_address);
 		val = json_rpc2_call(curl, rpc_url, rpc_userpass, s, &err, 0);
 		printf("got val\n");
 	} else {
@@ -2011,13 +2013,16 @@ start:
 		goto start;
 	}
 
-	if (!val)
-		return false;
+	if (!val) {
+	  printf("!val\n");
+	  return false;
+	}
 
 	if (have_gbt) {
 	  json_dumps(json_object_get(val,"result"),0);
 	  json_dumps(json_object_get(val_aux,"result"),0);
-	  if (work_aux && !aux_scriptsig) {
+	  if (work_aux) {
+	    printf("do gab work decode\n");
 	    aux_hash[0] = '\0';
 	    rc = gab_work_decode(json_object_get(val_aux,"result"),work_aux);
 	    //rc = gbt_work_decode(json_object_get(val_auxgbt, "result"), work_aux, true);
@@ -2037,6 +2042,7 @@ start:
 	    //printf("new aux_hash = %s\n",aux_hash);
 	    //memcpy(aux_target,work_aux->target,32);
 	    if (!rc) printf("bad rc after gab decode\n");
+	    printf("new aux_hash = %s\n",aux_hash);
 	  }
 	  printf("do gbt work decode par\n");
 	  lp = false;
@@ -2567,9 +2573,9 @@ static bool wanna_mine(int thr_id)
 
 static void *miner_thread(void *userdata)
 {
-  printf("in miner thread\n");
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	int thr_id = mythr->id;
+	printf("in miner thread thr_id=%d\n",thr_id);
 	struct work work;
 	uint32_t max_nonce;
 	uint32_t end_nonce = 0xffffffffU / opt_n_threads * (thr_id + 1) - 0x20;
@@ -2904,6 +2910,7 @@ static void *miner_thread(void *userdata)
 			rc = scanhash_cryptolight(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_CRYPTONIGHT:
+		  printf("do scanhash cryptonight thr %d\n",thr_id);
 		  if (jsonrpc_2) {
 		    rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done, true, aux_target, best_hash);
 		  }
