@@ -12,6 +12,8 @@
 
 #include <string.h>
 #include <inttypes.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #if defined(USE_ASM) && defined(__arm__) && defined(__APCS_32__)
 #define EXTERN_SHA256
@@ -660,7 +662,19 @@ int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_
 	  }
 	}
 	do {
-	  pdata[27] = thr_id*100; //tmp
+	  unsigned char * data = malloc(4);
+	  int randomData = open("/dev/urandom", O_RDONLY);
+	  size_t randomDataLen = 0;
+	  while (randomDataLen < 4) {
+	    ssize_t res = read(randomData, data + randomDataLen, 4 - randomDataLen);
+	    if (res < 0) {
+	      printf("Cannot read /dev/urandom\n");
+	      return 0;
+	    }
+	    randomDataLen += res;
+	  }
+	  
+	  pdata[27] = *(uint32_t*)data; //tmp
 	  be32enc(&endiandata[27], pdata[27]);
 	  for (int j=0; j<4; j++) {
 	    sprintf(cmd+11+27*8+2*j,"%02x",*((unsigned char *)endiandata+27*4+j));
