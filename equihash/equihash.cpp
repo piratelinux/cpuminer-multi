@@ -20,10 +20,30 @@
 
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
 
 #include <boost/optional.hpp>
 #include "equi_miner.h"
+
+void sha256_init(uint32_t *state);
+void sha256_transform(uint32_t *state, const uint32_t *block, int swap);
+void sha256d(unsigned char *hash, const unsigned char *data, int len);
+
+#ifdef USE_ASM
+#if defined(__ARM_NEON__) || defined(__i386__) || defined(__x86_64__)
+#define HAVE_SHA256_4WAY 1
+int sha256_use_4way();
+void sha256_init_4way(uint32_t *state);
+void sha256_transform_4way(uint32_t *state, const uint32_t *block, int swap);
+#endif
+#if defined(__x86_64__) && defined(USE_AVX2)
+#define HAVE_SHA256_8WAY 1
+int sha256_use_8way();
+void sha256_init_8way(uint32_t *state);
+void sha256_transform_8way(uint32_t *state, const uint32_t *block, int swap);
+#endif
+#endif
 
 EhSolverCancelledException solver_cancelled;
 
@@ -777,17 +797,62 @@ template bool Equihash<48,5>::OptimisedSolve(const eh_HashState& base_state,
                                              const std::function<bool(EhSolverCancelCheck)> cancelled);
 template bool Equihash<48,5>::IsValidSolution(const eh_HashState& base_state, std::vector<unsigned char> soln);
 
-int main (int argc, char ** argv) {
-  if (argc > 1) {
-    unsigned int n = 200;
-    unsigned int k = 9;
-    crypto_generichash_blake2b_state state;
-    EhInitialiseState(n, k, state);
-    char * ehinput = argv[1];
-    unsigned char ss[140];
-    for (int i=0; i<140; i++) {
-      sscanf(ehinput+2*i,"%2hhx",&ss[i]);
+bool fulltest(const uint32_t *hash, const uint32_t *target)
+{
+  int i;
+  bool rc = true;
+
+  for (i = 7; i >= 0; i--) {
+    if (hash[i] > target[i]) {
+      rc = false;
+      break;
     }
+    if (hash[i] < target[i]) {
+      rc = true;
+      break;
+    }
+  }
+  return rc;
+}
+
+int main (int argc, char ** argv) {
+
+  if (argc < 2) {
+    return 1;
+  }
+  
+  unsigned int n = 200;
+  unsigned int k = 9;
+  crypto_generichash_blake2b_state state;
+  EhInitialiseState(n, k, state);
+  char * ehinput = argv[1];
+  char * target_hex = argv[2];
+  unsigned char ss[1487];
+
+  unsigned char target [32];
+  //printf("ehinput (%d) = %s\n",strlen(ehinput),ehinput);
+  //printf("target_hex (%d) = %s\n",strlen(target_hex),target_hex);
+  for (int i=0; i<140; i++) {
+    sscanf(ehinput+2*i,"%2hhx",&ss[i]);
+  }
+  //memcpy(sst,ss,140);
+  for (int i=0; i<32; i++) {
+    sscanf(target_hex+2*i,"%2hhx",&target[i]);
+  }
+
+  /*printf("initial ss=\n");
+  for (int i=0; i<140; i++) printf("%02x",ss[i]);
+  printf("\n");
+  return 0;*/
+
+  const int max_nonce = 10;
+  uint32_t nonce = ((uint32_t*)ss)[27];
+  char * log_file = (char *)malloc(50);
+  sprintf(log_file,"equihash/log-%d",nonce);
+  //std::ofstream ofs (log_file,std::ofstream::out);
+  //ofs << "ehinput is " << ehinput;
+  do {
+    //printf("nonce=%d\n",nonce);
     crypto_generichash_blake2b_update(&state,&ss[0],140);
     equi eq(1);
     eq.setstate(&state);
@@ -815,13 +880,35 @@ int main (int argc, char ** argv) {
 	  //printf("not valid solution\n");
 	  continue;
 	}
-	printf("fd4005");
+	//now check the sha256 hash
+	ss[140] = 0xfd;
+	ss[141] = 0x40;
+	ss[142] = 0x05;
 	for (int i=0; i<sol_char.size(); i++) {
-	  printf("%02x",sol_char[i]);
+	  ss[143+i] = sol_char[i];
 	}
-	printf("\n");
+	memcpy(ss,ss,1487);
+	unsigned char hash [32];
+	sha256d(hash,ss,1487);
+
+	//ofs << "did hash";
+
+	if (fulltest((uint32_t*)hash,(uint32_t*)target)) {
+	  for (int i=0; i<1487; i++) printf("%02x",ss[i]);
+	  printf("\n");
+	  return 0;
+	}
+	  
+	/*printf("fd4005");
+	  for (int i=0; i<sol_char.size(); i++) {
+	  printf("%02x",sol_char[i]);
+	  }
+	  printf("\n");*/
       }
     }
-  }
-    return 0;
+    nonce++;
+    ((uint32_t*)ss)[27] = nonce; // actual nonce is swab32...
+  } while (nonce<max_nonce);
+  //ofs.close();
+  return 0;
 }
