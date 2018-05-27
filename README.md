@@ -1,6 +1,8 @@
 CPUMiner-Multi
 ==============
 
+Note this is the merge mining branch, more unstable than the linux branch, mostly for testing equihash and cryptonight merge mining.
+
 [![Build Status](https://travis-ci.org/tpruvot/cpuminer-multi.svg)](https://travis-ci.org/tpruvot/cpuminer-multi)
 
 This is a multi-threaded CPU miner,
@@ -99,9 +101,17 @@ _OR_
 ```
  ./autogen.sh	# only needed if building from git repo
  ./nomacro.pl	# only needed if building on Mac OS X or with Clang
- ./configure CFLAGS="*-march=native*" --with-crypto --with-curl
+ ./configure CFLAGS="-march=native" --with-crypto --with-curl
  # Use -march=native if building for a single machine
  make
+```
+
+### Special procedure for Equihash
+
+```
+cd equihash
+make
+export PATH="/path/to/cpuminer-multi":"$PATH"
 ```
 
 #### Note for Debian/Ubuntu users:
