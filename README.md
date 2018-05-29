@@ -104,6 +104,14 @@ _OR_
  make
 ```
 
+### Special procedure for Equihash
+
+```
+cd equihash
+make
+export PATH="/path/to/cpuminer-multi":"$PATH"
+```
+
 #### Note for Debian/Ubuntu users:
 
 ```
