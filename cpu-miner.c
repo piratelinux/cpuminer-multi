@@ -1781,8 +1781,9 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		    //bin2hex(data_str_aux, (unsigned char *)work_aux->data, header_len);
 		    bin2hex(data_str_aux, (unsigned char *)par_cbtx_cur,par_cbtx_cur_size);
 		    bin2hex(data_str_aux+2*par_cbtx_cur_size, (unsigned char *)best_hash,32);
+		    sprintf(data_str_aux+2*par_cbtx_cur_size+64,"%02x",(unsigned char)par_cbmb_cur_size);
 		    for (i=0;i<par_cbmb_cur_size;i++) {
-		      bin2hex(data_str_aux+2*par_cbtx_cur_size+64+i*64,par_cbmb_cur[i],32);
+		      bin2hex(data_str_aux+2*par_cbtx_cur_size+64+2+i*64,par_cbmb_cur[i],32);
 		    }
 		  }
 		  strcat(data_str_aux,"000000000000000000");
@@ -3035,13 +3036,23 @@ static void *miner_thread(void *userdata)
 			rc = scanhash_xevan(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_YESCRYPT:
-			rc = scanhash_yescrypt(thr_id, &work, max_nonce, &hashes_done);
+		  if (rpc_url_aux) {
+		    rc = scanhash_yescrypt(thr_id, &work, max_nonce, &hashes_done,aux_target,best_hash);
+		  }
+		  else {
+		    rc = scanhash_yescrypt(thr_id, &work, max_nonce, &hashes_done,0,0);
+		  }
 			break;
 		case ALGO_ZR5:
 			rc = scanhash_zr5(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_AR2:
-		  rc = scanhash_ar2(thr_id, &work, max_nonce, &hashes_done);
+		  if (rpc_url_aux) {
+		    rc = scanhash_ar2(thr_id, &work, max_nonce, &hashes_done, aux_target, best_hash);
+		  }
+		  else {
+		    rc = scanhash_ar2(thr_id, &work, max_nonce, &hashes_done, 0, 0);
+		  }
 		  break;
 		case ALGO_EQUIHASH:
 		  if (rpc_url_aux) {
