@@ -42,7 +42,6 @@ cpuminer_SOURCES = \
   sha3/sph_whirlpool.c \
   sha3/gost_streebog.c \
   crypto/blake2s.c \
-  crypto/oaes_lib.c \
   crypto/c_keccak.c \
   crypto/c_groestl.c \
   crypto/c_blake256.c \
@@ -67,8 +66,6 @@ cpuminer_SOURCES = \
   algo/blake2.c \
   algo/bmw256.c \
   algo/c11.c \
-  algo/cryptonight.c \
-  algo/cryptolight.c \
   algo/decred.c \
   algo/drop.c \
   algo/fresh.c \
@@ -131,10 +128,19 @@ if HAVE_WINDOWS
    cpuminer_SOURCES += compat/winansi.c
 endif
 
+if USE_LOBOTOMIZED_AES
+cpuminer_SOURCES += algo/cryptonight_lobo.c crypto/oaes_lib.c
+else
+cpuminer_SOURCES += algo/cryptonight.c
+endif
+
 cpuminer_LDFLAGS	= @LDFLAGS@
 cpuminer_LDADD	= @LIBCURL@ @JANSSON_LIBS@ @PTHREAD_LIBS@ @WS2_LIBS@
 cpuminer_CPPFLAGS = @LIBCURL_CPPFLAGS@ $(ALL_INCLUDES)
 cpuminer_CFLAGS   = -Wno-pointer-sign -Wno-pointer-to-int-cast $(disable_flags)
+if ! USE_LOBOTOMIZED_AES
+cpuminer_CFLAGS += -maes
+endif
 
 if HAVE_WINDOWS
 cpuminer_CFLAGS += -Wl,--stack,10485760

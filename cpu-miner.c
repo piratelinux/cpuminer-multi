@@ -88,7 +88,7 @@ enum algos {
 	ALGO_BLAKE2S,     /* Blake2s */
 	ALGO_BMW,         /* BMW 256 */
 	ALGO_C11,         /* C11 Chaincoin/Flaxcoin X11 variant */
-	ALGO_CRYPTOLIGHT, /* cryptonight-light (Aeon) */
+	ALGO_CRYPTOLIGHT, /* cryptonight-light (Aeon) */ // disable
 	ALGO_CRYPTONIGHT, /* CryptoNight */
 	ALGO_DECRED,      /* Decred */
 	ALGO_DMD_GR,      /* Diamond */
@@ -1125,7 +1125,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			bin2hex(noncestr, (const unsigned char *)work->data + 39, 4);
 			switch(opt_algo) {
 			case ALGO_CRYPTOLIGHT:
-				cryptolight_hash(hash, work->data, 76);
+			  //cryptolight_hash(hash, work->data, 76);
 				break;
 			case ALGO_CRYPTONIGHT:
 				cryptonight_hash(hash, work->data, 80);
@@ -1265,7 +1265,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 			switch(opt_algo) {
 			case ALGO_CRYPTOLIGHT:
-				cryptolight_hash(hash, work->data, 76);
+			  //cryptolight_hash(hash, work->data, 76);
 				break;
 			case ALGO_CRYPTONIGHT:
 				cryptonight_hash(hash, work->data, 80);
@@ -2262,7 +2262,7 @@ static bool wanna_mine(int thr_id)
 			rc = scanhash_c11(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_CRYPTOLIGHT:
-			rc = scanhash_cryptolight(thr_id, &work, max_nonce, &hashes_done);
+		  //rc = scanhash_cryptolight(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_CRYPTONIGHT:
 		  rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done);

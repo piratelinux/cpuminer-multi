@@ -112,6 +112,10 @@ make
 export PATH="/path/to/cpuminer-multi":"$PATH"
 ```
 
+### Cryptonight Optimizations
+
+By default we enable AES-NI support for cryptonight. To disable it pass --disable-aes-ni to configure.
+
 #### Note for Debian/Ubuntu users:
 
 ```

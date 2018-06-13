@@ -125,6 +125,11 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([static __uint128_t i = 100;])],
       AC_MSG_RESULT(no)
 )
 
+AC_ARG_ENABLE(aes-ni, AS_HELP_STRING([--disable-aes-ni], [disables aes-ni - use if your cpu is old]), use_hwaes=$enableval, use_hwaes=yes)
+if test "$use_hwaes" != "yes"; then
+  AC_DEFINE(USE_LOBOTOMIZED_AES, 1, [Set to one if we have to use the slow version])
+fi	
+
 # allow if <var> in Makefile.am
 AM_CONDITIONAL([WANT_JANSSON], [test x$request_jansson = xtrue])
 AM_CONDITIONAL([HAVE_WINDOWS], [test x$have_win32 = xtrue])
@@ -133,6 +138,9 @@ AM_CONDITIONAL([ARCH_x86], [test x$have_x86 = xtrue])
 AM_CONDITIONAL([ARCH_x86_64], [test x$have_x86_64 = xtrue])
 AM_CONDITIONAL([ARCH_ARM], [test x$have_arm = xtrue])
 AM_CONDITIONAL([MINGW], [test "x$OS" = "xWindows_NT"])
+
+
+AM_CONDITIONAL([USE_LOBOTOMIZED_AES], test "$use_hwaes" = "no")
 
 if test x$request_jansson = xtrue ; then
 	JANSSON_LIBS="compat/jansson/libjansson.a"
