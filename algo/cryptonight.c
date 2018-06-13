@@ -227,9 +227,9 @@ int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint
   uint32_t _ALIGN(128) endiandata[20];
   uint32_t *pdata = work->data;
   uint32_t *ptarget = work->target;
-  printf("scanhash cryptonight target = ");
+  /*printf("scanhash cryptonight target = ");
   for (int i=0; i<32; i++) printf("%02x",((uchar*)ptarget)[i]);
-  printf("\n");
+  printf("\n");*/
   char * targethex = abin2hex((unsigned char *)ptarget, 32);
 
   uint32_t *nonceptr = pdata+19;
@@ -248,11 +248,11 @@ int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint
     cryptonight_hash_ctx(hash, endiandata, 80, ctx, 1);
     char * hashhex = abin2hex((unsigned char *)hash, 32);
     if (unlikely(hash[7] < ptarget[7])) {
-      printf("good hash: %s\n",hashhex);
+      /*printf("good hash: %s\n",hashhex);
       for (int i=0; i<80; i++) {
 	printf("%02x",((unsigned char *)endiandata)[i]);
       }
-      printf("\n");
+      printf("\n");*/
       work_set_target_ratio(work, hash);
       *hashes_done = n - first_nonce + 1;
       free(ctx);

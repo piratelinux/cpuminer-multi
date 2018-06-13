@@ -1094,7 +1094,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 	int i;
 	bool rc = false;
 
-	if (opt_algo == ALGO_EQUIHASH) printf("submit equihash work\n");
+	//if (opt_algo == ALGO_EQUIHASH) printf("submit equihash work\n");
 
 	/* pass if the previous hash is not the current previous hash */
 	if (opt_algo != ALGO_SIA && !submit_old && memcmp(&work->data[1], &g_work.data[1], 32)) {
@@ -1114,12 +1114,12 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 	}
 
 	if (have_stratum) {
-	  printf("have stratum\n");
+	  //printf("have stratum\n");
 		uint32_t ntime, nonce;
 		char ntimestr[9], noncestr[9];
 
 		if (jsonrpc_2) {
-		  printf("jsonrpc2\n");
+		  //printf("jsonrpc2\n");
 			uchar hash[32];
 
 			bin2hex(noncestr, (const unsigned char *)work->data + 39, 4);
@@ -1180,7 +1180,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			snprintf(s, JSON_BUF_LEN,
 					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":4}",
 					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr);
-			printf("s=%s\n",s);
+			//printf("s=%s\n",s);
 			free(xnonce2str);
 		}
 
@@ -1194,7 +1194,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 	} else if (work->txs) { /* gbt */
 
-	  if (opt_algo == ALGO_EQUIHASH) printf("submit block with work->txs equihash\n");
+	  //if (opt_algo == ALGO_EQUIHASH) printf("submit block with work->txs equihash\n");
 	  
 		char data_str[2 * sizeof(work->data) + 1];
 		char *req;
@@ -1251,7 +1251,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		json_decref(val);
 
 	} else {
-	  printf("!work->txs\n");
+	  //printf("!work->txs\n");
 		char* gw_str = NULL;
 		int data_size = 128;
 		int adata_sz;
@@ -1800,12 +1800,12 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 			work->data[17] = le32dec(sctx->job.ntime);
 			work->data[18] = le32dec(sctx->job.nbits);
 			char nbits_hex [9];
-			printf("stratum nbits = ");
+			/*printf("stratum nbits = ");
 			for (i=0;i<4;i++) {
 			  sprintf(nbits_hex+2*i,"%02",((uchar*)&work->data[18])[i]);
 			  printf("%02x",((uchar*)&work->data[18])[i]);
 			}
-			printf("\n");
+			printf("\n");*/
 			//applog(LOG_DEBUG, "stratum nbits = %s",nbits_hex);
 			// required ?
 			work->data[20] = 0x80000000;
@@ -1842,10 +1842,10 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		  break;
 		case ALGO_CRYPTONIGHT:
 		  work_set_target(work, sctx->job.diff / (/*16777216 * */opt_diff_factor));
-		  printf("sctx->job.diff = %.9f\n",sctx->job.diff);
-		  printf("stratum gen target = ");
-		  for (int i=0; i<32; i++) printf("%02x",((uchar*)work->target)[i]);
-		  printf("\n");
+		  //printf("sctx->job.diff = %.9f\n",sctx->job.diff);
+		  //printf("stratum gen target = ");
+		  //for (int i=0; i<32; i++) printf("%02x",((uchar*)work->target)[i]);
+		  //printf("\n");
 		  //memset(target, 0, 32);
 		  //target[3] = (uint32_t)m;
 		  //target[k + 1] = (uint32_t)(m >> 32);
@@ -2059,7 +2059,7 @@ static bool wanna_mine(int thr_id)
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
 			if (regen_work) {
-			  printf("do stratum regen work\n");
+			  //printf("do stratum regen work\n");
 			  stratum_gen_work(&stratum, &g_work);
 			}
 
