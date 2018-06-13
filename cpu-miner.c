@@ -567,7 +567,7 @@ static void calc_network_diff(struct work *work)
 	uint32_t bits = (nbits & 0xffffff);
 	int16_t shift = (swab32(nbits) & 0xff); // 0x1c = 28
 
-	double d = (double)0x0000ffff / (double)bits;
+ 	double d = (double)0x0000ffff / (double)bits;
 	for (int m=shift; m < 29; m++) d *= 256.0;
 	for (int m=29; m < shift; m++) d /= 256.0;
 	if (opt_algo == ALGO_DECRED && shift == 28) d *= 256.0; // testnet
@@ -612,6 +612,13 @@ static bool work_decode(const json_t *val, struct work *work)
 
 	if ((opt_showdiff || opt_max_diff > 0.) && !allow_mininginfo)
 		calc_network_diff(work);
+
+	applog(LOG_DEBUG,"work_decode target is");
+	char target_hex [65];
+	for (i=0; i<32; i++) {
+	  sprintf(target_hex,"%02x",((uchar*)work->target)[i]);
+	}
+	applog(LOG_DEBUG,"%s",target_hex);
 
 	work->targetdiff = target_to_diff(work->target);
 
@@ -791,6 +798,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 		goto out;
 	}
 	curtime = (uint32_t) json_integer_value(tmp);
+	//if (work->height % 2 == 0) curtime += 60*20; //tmp for testing timestamp warning
 
 	if (unlikely(!jobj_binary(val, "bits", &bits, sizeof(bits)))) {
 		applog(LOG_ERR, "JSON invalid bits");
@@ -1111,6 +1119,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		char ntimestr[9], noncestr[9];
 
 		if (jsonrpc_2) {
+		  printf("jsonrpc2\n");
 			uchar hash[32];
 
 			bin2hex(noncestr, (const unsigned char *)work->data + 39, 4);
@@ -1171,6 +1180,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			snprintf(s, JSON_BUF_LEN,
 					"{\"method\": \"mining.submit\", \"params\": [\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":4}",
 					rpc_user, work->job_id, xnonce2str, ntimestr, noncestr);
+			printf("s=%s\n",s);
 			free(xnonce2str);
 		}
 
@@ -1789,6 +1799,14 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		} else {
 			work->data[17] = le32dec(sctx->job.ntime);
 			work->data[18] = le32dec(sctx->job.nbits);
+			char nbits_hex [9];
+			printf("stratum nbits = ");
+			for (i=0;i<4;i++) {
+			  sprintf(nbits_hex+2*i,"%02",((uchar*)&work->data[18])[i]);
+			  printf("%02x",((uchar*)&work->data[18])[i]);
+			}
+			printf("\n");
+			//applog(LOG_DEBUG, "stratum nbits = %s",nbits_hex);
 			// required ?
 			work->data[20] = 0x80000000;
 			work->data[31] = 0x00000280;
@@ -1813,40 +1831,50 @@ static void stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		}
 
 		switch (opt_algo) {
-			case ALGO_DROP:
-			case ALGO_JHA:
-			case ALGO_SCRYPT:
-			case ALGO_SCRYPTJANE:
-			case ALGO_NEOSCRYPT:
-			case ALGO_PLUCK:
-			case ALGO_YESCRYPT:
-				work_set_target(work, sctx->job.diff / (65536.0 * opt_diff_factor));
-				break;
-			case ALGO_FRESH:
-			case ALGO_DMD_GR:
-			case ALGO_GROESTL:
-			case ALGO_LBRY:
-			case ALGO_LYRA2REV2:
-			case ALGO_TIMETRAVEL:
-			case ALGO_BITCORE:
-			case ALGO_XEVAN:
-				work_set_target(work, sctx->job.diff / (256.0 * opt_diff_factor));
-				break;
-			case ALGO_KECCAK:
-			case ALGO_LYRA2:
-				work_set_target(work, sctx->job.diff / (128.0 * opt_diff_factor));
-				break;
-			default:
-				work_set_target(work, sctx->job.diff / opt_diff_factor);
+		case ALGO_DROP:
+		case ALGO_JHA:
+		case ALGO_SCRYPT:
+		case ALGO_SCRYPTJANE:
+		case ALGO_NEOSCRYPT:
+		case ALGO_PLUCK:
+		case ALGO_YESCRYPT:
+		  work_set_target(work, sctx->job.diff / (65536.0 * opt_diff_factor));
+		  break;
+		case ALGO_CRYPTONIGHT:
+		  work_set_target(work, sctx->job.diff / (/*16777216 * */opt_diff_factor));
+		  printf("sctx->job.diff = %.9f\n",sctx->job.diff);
+		  printf("stratum gen target = ");
+		  for (int i=0; i<32; i++) printf("%02x",((uchar*)work->target)[i]);
+		  printf("\n");
+		  //memset(target, 0, 32);
+		  //target[3] = (uint32_t)m;
+		  //target[k + 1] = (uint32_t)(m >> 32);
+		  break;
+		case ALGO_FRESH:
+		case ALGO_DMD_GR:
+		case ALGO_GROESTL:
+		case ALGO_LBRY:
+		case ALGO_LYRA2REV2:
+		case ALGO_TIMETRAVEL:
+		case ALGO_BITCORE:
+		case ALGO_XEVAN:
+		  work_set_target(work, sctx->job.diff / (256.0 * opt_diff_factor));
+		  break;
+		case ALGO_KECCAK:
+		case ALGO_LYRA2:
+		  work_set_target(work, sctx->job.diff / (128.0 * opt_diff_factor));
+		  break;
+		default:
+		  work_set_target(work, sctx->job.diff / opt_diff_factor);
 		}
 
 		if (stratum_diff != sctx->job.diff) {
-			char sdiff[32] = { 0 };
-			// store for api stats
-			stratum_diff = sctx->job.diff;
-			if (opt_showdiff && work->targetdiff != stratum_diff)
-				snprintf(sdiff, 32, " (%.5f)", work->targetdiff);
-			applog(LOG_WARNING, "Stratum difficulty set to %g%s", stratum_diff, sdiff);
+		  char sdiff[32] = { 0 };
+		  // store for api stats
+		  stratum_diff = sctx->job.diff;
+		  if (opt_showdiff && work->targetdiff != stratum_diff)
+		    snprintf(sdiff, 32, " (%.5f)", work->targetdiff);
+		  applog(LOG_WARNING, "Stratum difficulty set to %g%s", stratum_diff, sdiff);
 		}
 	}
 }
@@ -1898,7 +1926,7 @@ static bool wanna_mine(int thr_id)
 	return state;
 }
 
-static void *miner_thread(void *userdata)
+ static void *miner_thread(void *userdata)
 {
 	struct thr_info *mythr = (struct thr_info *) userdata;
 	int thr_id = mythr->id;
@@ -2031,7 +2059,8 @@ static void *miner_thread(void *userdata)
 				&& !( memcmp(&work.data[wkcmp_offset], &g_work.data[wkcmp_offset], wkcmp_sz) ||
 				 jsonrpc_2 ? memcmp(((uint8_t*) work.data) + 43, ((uint8_t*) g_work.data) + 43, 33) : 0));
 			if (regen_work) {
-				stratum_gen_work(&stratum, &g_work);
+			  printf("do stratum regen work\n");
+			  stratum_gen_work(&stratum, &g_work);
 			}
 
 		} else {
@@ -2589,6 +2618,7 @@ out:
 
 static bool stratum_handle_response(char *buf)
 {
+  
 	json_t *val, *err_val, *res_val, *id_val;
 	json_error_t err;
 	bool ret = false;
@@ -2599,6 +2629,8 @@ static bool stratum_handle_response(char *buf)
 		applog(LOG_INFO, "JSON decode failed(%d): %s", err.line, err.text);
 		goto out;
 	}
+	char *s = json_dumps(val, JSON_INDENT(3));
+	printf("response:\n%s\n");
 
 	res_val = json_object_get(val, "result");
 	err_val = json_object_get(val, "error");
@@ -2693,6 +2725,7 @@ static void *stratum_thread(void *userdata)
 			(!g_work_time || strcmp(stratum.job.job_id, g_work.job_id)) )
 		{
 			pthread_mutex_lock(&g_work_lock);
+			printf("do stratum gen work\n");
 			stratum_gen_work(&stratum, &g_work);
 			time(&g_work_time);
 			pthread_mutex_unlock(&g_work_lock);
